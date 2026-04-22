@@ -54,6 +54,7 @@ function createGlobe(container) {
       .attr('r', currentScale);
 
     svg.append('circle')
+      .attr('class', 'ocean')
       .attr('cx', width / 2)
       .attr('cy', height / 2)
       .attr('r', currentScale)
@@ -69,8 +70,8 @@ function createGlobe(container) {
 
   function setupInteractions() {
     const drag = d3.drag()
+      .filter(() => draggable)
       .on('drag', (event) => {
-        if (!draggable) return;
         const k = 0.25;
         rotation[0] += event.dx * k;
         rotation[1] -= event.dy * k;
@@ -81,18 +82,26 @@ function createGlobe(container) {
 
     const zoom = d3.zoom()
       .scaleExtent([baseScale * 0.6, baseScale * 2.5])
+      .filter(event => {
+        if (!zoomable) return false;
+        // On touch devices, only allow pinch (multi-touch) for zoom.
+        // Single-finger drag should rotate the globe via drag behavior.
+        if (event.type === 'touchstart') {
+          return event.touches.length > 1;
+        }
+        return !event.ctrlKey && !event.button;
+      })
       .on('zoom', (event) => {
-        if (!zoomable) return;
         const newScale = event.transform.k;
         if (newScale === currentScale) return;
         currentScale = newScale;
         projection.scale(currentScale);
-        svg.select('circle').attr('r', currentScale);
+        svg.select('circle.ocean').attr('r', currentScale);
         svg.select('#globe-clip circle').attr('r', currentScale);
         redraw();
       });
 
-    svg.call(drag).call(zoom)
+    svg.call(zoom).call(drag)
       .on('click', handleClick);
 
     // Set initial zoom transform to match projection scale

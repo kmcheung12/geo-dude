@@ -6,10 +6,11 @@
 (function() {
   'use strict';
 
-  const WS_URL = `ws://${location.host || 'localhost:3000'}`;
+  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.host || 'localhost:3000');
   let ws = null;
   let msgQueue = [];
   let myName = localStorage.getItem('geoName') || null;
+  let roomId = null;
   let isHost = false;
   let isSpectator = false;
   let gameState = 'LOBBY';
@@ -28,24 +29,34 @@
   }
 
   const screens = {
+    landing: getEl('screen-landing'),
+    hostWait: getEl('screen-host-wait'),
     join: getEl('screen-join'),
     lobby: getEl('screen-lobby'),
     game: getEl('screen-game'),
   };
 
   const els = {
+    btnStartRoom: getEl('btn-start-room'),
+    btnJoinRoom: getEl('btn-join-room'),
+    landingName: getEl('landing-name'),
+    hostRoomId: getEl('host-room-id'),
+    hostQrCode: getEl('host-qr-code'),
+    hostRoomUrl: getEl('host-room-url'),
+    hostWaitPlayerList: getEl('host-wait-player-list'),
+    btnStartFromWait: getEl('btn-start-from-wait'),
+    joinRoomId: getEl('join-room-id'),
     joinName: getEl('join-name'),
     btnJoin: getEl('btn-join'),
+    btnBackToLanding: getEl('btn-back-to-landing'),
     joinStatus: getEl('join-status'),
     joinError: getEl('join-error'),
-    joinQrCode: getEl('join-qr-code'),
-    joinRoomUrl: getEl('join-room-url'),
     lobbyPlayerList: getEl('lobby-player-list'),
     hostControls: getEl('host-controls'),
     guestWaiting: getEl('guest-waiting'),
     btnStart: getEl('btn-start'),
-    qrCode: getEl('qr-code'),
-    roomUrl: getEl('room-url'),
+    lobbyQrCode: getEl('lobby-qr-code'),
+    lobbyRoomUrl: getEl('lobby-room-url'),
     settingMode: getEl('setting-mode'),
     settingQuestions: getEl('setting-questions'),
     settingTimer: getEl('setting-timer'),
@@ -160,7 +171,6 @@
       console.log('[Geo] WebSocket open');
       setJoinStatus('Connected');
       flushQueue();
-      // Join is now explicit — user must click the Join button.
     };
 
     ws.onmessage = (evt) => {
@@ -225,6 +235,10 @@
       case 'players':
         renderPlayerList(msg.players);
         updatePlayerChips(msg.players);
+        // Also update host-wait player list if we're on that screen
+        if (screens.hostWait && screens.hostWait.classList.contains('active')) {
+          renderHostWaitPlayerList(msg.players);
+        }
         break;
 
       case 'settings':
@@ -283,7 +297,7 @@
 
       case 'roomClosed':
         console.log('[Geo] Room closed:', msg.reason);
-        showScreen('join');
+        showScreen('landing');
         if (els.joinError) els.joinError.textContent = msg.reason || 'Room has ended. Please rejoin.';
         break;
 
@@ -295,19 +309,86 @@
   }
 
   // ------------------------------------------------------------------
+  // Room Creation (Host)
+  // ------------------------------------------------------------------
+  async function doCreateRoom() {
+    console.log('[Geo] Creating room...');
+    try {
+      const res = await fetch('/api/rooms', { method: 'POST' });
+      const data = await res.json();
+      if (!data.roomId) {
+        console.error('[Geo] Failed to create room:', data);
+        return;
+      }
+      roomId = data.roomId;
+      console.log('[Geo] Room created:', roomId);
+
+      // Update URL without reloading
+      history.replaceState(null, '', `/?room=${roomId}`);
+
+      // Show host wait screen
+      if (els.hostRoomId) els.hostRoomId.textContent = roomId;
+      if (els.hostQrCode) els.hostQrCode.src = data.qr;
+      if (els.hostRoomUrl) els.hostRoomUrl.textContent = data.url;
+      showScreen('hostWait');
+
+      // Ensure WS is connected, then join
+      connect();
+      flushQueue();
+      const name = els.landingName ? els.landingName.value.trim() : (myName || '');
+      if (name) {
+        localStorage.setItem('geoName', name);
+        myName = name;
+        send({ type: 'join', name, roomId });
+      }
+    } catch (e) {
+      console.error('[Geo] Error creating room:', e);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Join
   // ------------------------------------------------------------------
   function doJoin() {
     console.log('[Geo] doJoin called');
+    const id = els.joinRoomId ? els.joinRoomId.value.trim().toUpperCase() : '';
     const name = els.joinName ? els.joinName.value.trim() : '';
+
+    if (!id) {
+      if (els.joinError) els.joinError.textContent = 'Please enter a Room ID.';
+      return;
+    }
     if (!name) {
       if (els.joinError) els.joinError.textContent = 'Please enter a name.';
       return;
     }
+
     if (els.joinError) els.joinError.textContent = '';
+    roomId = id;
     localStorage.setItem('geoName', name);
     myName = name;
-    send({ type: 'join', name });
+    send({ type: 'join', name, roomId });
+  }
+
+  // ------------------------------------------------------------------
+  // Host Waiting Screen
+  // ------------------------------------------------------------------
+  function renderHostWaitPlayerList(players) {
+    if (!els.hostWaitPlayerList) return;
+    els.hostWaitPlayerList.innerHTML = '';
+    const connected = players.filter(p => p.connected);
+    if (connected.length === 0) {
+      els.hostWaitPlayerList.innerHTML = '<p class="text-muted">Waiting for players...</p>';
+      return;
+    }
+    for (const p of connected) {
+      const div = document.createElement('div');
+      div.className = 'player-item';
+      let badges = '';
+      if (p.isHost) badges += '<span class="host-badge">HOST</span>';
+      div.innerHTML = `<span>${escapeHtml(p.name)}</span><span>${badges}</span>`;
+      els.hostWaitPlayerList.appendChild(div);
+    }
   }
 
   // ------------------------------------------------------------------
@@ -321,10 +402,22 @@
     if (isHost) {
       els.hostControls && els.hostControls.classList.remove('hidden');
       els.guestWaiting && els.guestWaiting.classList.add('hidden');
-      loadQR();
+      loadLobbyQR();
     } else {
       els.hostControls && els.hostControls.classList.add('hidden');
       els.guestWaiting && els.guestWaiting.classList.remove('hidden');
+    }
+  }
+
+  async function loadLobbyQR() {
+    if (!roomId || !els.lobbyQrCode) return;
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/qr`);
+      const data = await res.json();
+      if (els.lobbyQrCode) els.lobbyQrCode.src = data.qr;
+      if (els.lobbyRoomUrl) els.lobbyRoomUrl.textContent = data.url;
+    } catch (e) {
+      console.error('Failed to load lobby QR', e);
     }
   }
 
@@ -361,25 +454,15 @@
     send({ type: 'updateSettings', setting, value });
   }
 
-  async function loadQR() {
-    try {
-      const res = await fetch('/api/qr');
-      const data = await res.json();
-      if (els.qrCode) els.qrCode.src = data.qr;
-      if (els.roomUrl) els.roomUrl.textContent = data.url;
-      if (els.joinQrCode) els.joinQrCode.src = data.qr;
-      if (els.joinRoomUrl) els.joinRoomUrl.textContent = data.url;
-    } catch (e) {
-      console.error('Failed to load QR', e);
-    }
-  }
-
   // ------------------------------------------------------------------
   // Game
   // ------------------------------------------------------------------
   function updateHostGameActions() {
-    if (els.hostGameActions) {
-      els.hostGameActions.classList.toggle('hidden', !isHost || gameState === 'LOBBY');
+    if (!els.hostGameActions) return;
+    if (!isHost || gameState === 'LOBBY') {
+      els.hostGameActions.classList.add('hidden');
+    } else {
+      els.hostGameActions.classList.remove('hidden');
     }
   }
 
@@ -448,19 +531,32 @@
   }
 
   function renderAnswerButtons(options, target) {
-    if (document.activeElement) document.activeElement.blur();
     if (!els.answerPanel) return;
     els.answerPanel.innerHTML = '';
     for (const opt of options) {
       const btn = document.createElement('button');
       btn.className = 'answer-btn';
       btn.textContent = opt;
-      btn.addEventListener('click', () => {
-        if (hasAnswered) return;
+
+      let triggered = false;
+      const trigger = () => {
+        if (triggered || hasAnswered) return;
+        triggered = true;
         hasAnswered = true;
+        btn.classList.add('selected');
         disableAllButtons();
         send({ type: 'answer', answer: opt });
+      };
+
+      btn.addEventListener('touchstart', () => {
+        trigger();
+      }, { passive: true });
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        trigger();
       });
+
       els.answerPanel.appendChild(btn);
     }
   }
@@ -490,11 +586,20 @@
       confirmBtn.textContent = 'Confirm Selection';
     };
 
-    confirmBtn.addEventListener('click', () => {
+    const confirmTrigger = () => {
       if (!selected || hasAnswered) return;
       hasAnswered = true;
       confirmBtn.disabled = true;
       send({ type: 'answer', answer: selected });
+    };
+
+    confirmBtn.addEventListener('touchstart', () => {
+      confirmTrigger();
+    }, { passive: true });
+
+    confirmBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      confirmTrigger();
     });
   }
 
@@ -502,6 +607,7 @@
     if (!els.answerPanel) return;
     for (const btn of els.answerPanel.querySelectorAll('button')) {
       btn.disabled = true;
+      btn.classList.add('locked');
     }
   }
 
@@ -565,7 +671,6 @@
   // Overlays
   // ------------------------------------------------------------------
   function showQuestionEnd(msg) {
-    // In "Find a country" mode, highlight the correct answer on the globe instead of showing a popup
     if (currentMode === 'select') {
       if (els.answerPanel) els.answerPanel.innerHTML = '';
       if (els.gamePrompt) els.gamePrompt.textContent = `Answer: ${msg.correctAnswer}`;
@@ -583,7 +688,6 @@
       return;
     }
 
-    // "Name the country" mode: show the overlay with correct answer text
     if (els.qeAnswer) els.qeAnswer.textContent = `Correct answer: ${msg.correctAnswer}`;
     if (els.qeAnswers) {
       els.qeAnswers.innerHTML = '';
@@ -691,15 +795,34 @@
   function init() {
     console.log('[Geo] init() running');
 
+    // Landing screen
+    if (els.btnStartRoom) {
+      els.btnStartRoom.addEventListener('click', () => {
+        doCreateRoom();
+      });
+    }
+    if (els.btnJoinRoom) {
+      els.btnJoinRoom.addEventListener('click', () => {
+        // Carry over name from landing to join screen
+        if (els.landingName && els.joinName) {
+          els.joinName.value = els.landingName.value.trim();
+        }
+        showScreen('join');
+      });
+    }
+    if (els.btnBackToLanding) {
+      els.btnBackToLanding.addEventListener('click', () => {
+        showScreen('landing');
+      });
+    }
+
+    // Join screen
     if (els.btnJoin) {
       els.btnJoin.addEventListener('click', (e) => {
         e.preventDefault();
         console.log('[Geo] btnJoin click');
         doJoin();
       });
-      console.log('[Geo] btnJoin handler attached');
-    } else {
-      console.error('[Geo] btnJoin not found!');
     }
 
     if (els.joinName) {
@@ -707,14 +830,33 @@
         if (e.key === 'Enter') doJoin();
       });
     }
-
-    if (localStorage.getItem('geoName') && els.joinName) {
-      els.joinName.value = localStorage.getItem('geoName');
+    if (els.joinRoomId) {
+      els.joinRoomId.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doJoin();
+      });
     }
 
-    // Load QR on join screen too
-    loadQR();
+    // Pre-fill name
+    const savedName = localStorage.getItem('geoName') || '';
+    if (savedName) {
+      if (els.joinName) els.joinName.value = savedName;
+      if (els.landingName) els.landingName.value = savedName;
+    }
 
+    // Pre-fill room ID from URL
+    const urlRoomId = new URLSearchParams(location.search).get('room');
+    if (urlRoomId && els.joinRoomId) {
+      els.joinRoomId.value = urlRoomId.toUpperCase();
+    }
+
+    // Host wait screen start button
+    if (els.btnStartFromWait) {
+      els.btnStartFromWait.addEventListener('click', () => {
+        send({ type: 'startRound' });
+      });
+    }
+
+    // Settings
     const settingMap = {
       'setting-mode': 'mode',
       'setting-timer': 'timerPerGuess',
@@ -757,7 +899,14 @@
     }
 
     connect();
-    showScreen('join');
+
+    // If there's a room ID in the URL, show join screen directly
+    if (urlRoomId) {
+      showScreen('join');
+    } else {
+      showScreen('landing');
+    }
+
     console.log('[Geo] init complete');
   }
 

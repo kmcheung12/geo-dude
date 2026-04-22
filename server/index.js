@@ -1,6 +1,6 @@
 /**
  * Geo Challenge Server
- * HTTP + WebSocket server with room management and game engine.
+ * HTTP + WebSocket server with multi-room management and game engine.
  */
 
 const express = require('express');
@@ -16,8 +16,7 @@ const topojson = require('topojson-client');
 // Config & Network Detection
 // ------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || detectLocalIP();
-const BASE_URL = `http://${HOST}:${PORT}`;
+const ROOM_IDLE_TIMEOUT_MS = parseInt(process.env.ROOM_IDLE_TIMEOUT_MS, 10) || 600000;
 
 function detectLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -29,6 +28,26 @@ function detectLocalIP() {
     }
   }
   return '127.0.0.1';
+}
+
+function getBaseUrl(req) {
+  if (process.env.BASE_URL) {
+    return process.env.BASE_URL;
+  }
+  const host = req.get('host') || `${detectLocalIP()}:${PORT}`;
+  if (host.startsWith('localhost') || host.startsWith('127.')) {
+    return `http://${detectLocalIP()}:${PORT}`;
+  }
+  return `${req.protocol}://${host}`;
+}
+
+function generateRoomId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return id;
 }
 
 // ------------------------------------------------------------------
@@ -129,7 +148,8 @@ function shuffle(array) {
 // Room / Game Engine
 // ------------------------------------------------------------------
 class Room {
-  constructor() {
+  constructor(roomId) {
+    this.roomId = roomId;
     this.state = 'LOBBY';
     this.settings = {
       mode: 'highlight',
@@ -151,6 +171,7 @@ class Room {
     this.pingInterval = null;
     this.pingMisses = 0;
     this.awaitingPong = false;
+    this.lastActivity = Date.now();
   }
 
   get activePlayers() {
@@ -185,6 +206,7 @@ class Room {
   }
 
   addPlayer(ws, name) {
+    this.lastActivity = Date.now();
     name = (name || '').trim().substring(0, 20);
     if (!name) {
       this.send(ws, { type: 'error', message: 'Please enter a name.' });
@@ -193,13 +215,10 @@ class Room {
 
     const existing = this.players.get(name);
     if (existing) {
-      // Block only if the existing player is on a live socket.
-      // If their socket is dead (CLOSED / CLOSING), let the new connection take over.
       if (existing.connected && existing.ws && existing.ws.readyState === 1) {
         this.send(ws, { type: 'error', message: `${name} is already in the room` });
         return null;
       }
-      // Reconnect or steal from dead socket
       existing.connected = true;
       existing.ws = ws;
       this.sockets.set(ws, name);
@@ -246,11 +265,6 @@ class Room {
     }
     this.sockets.delete(ws);
     this.broadcastPlayerList();
-
-    if (this.allConnected.length === 0) {
-      this.destroy();
-      resetRoom();
-    }
   }
 
   changeName(ws, newName) {
@@ -259,19 +273,16 @@ class Room {
     newName = newName.trim().substring(0, 20);
     if (newName === player.name) return;
 
-    // Check collision with connected players
     const target = this.players.get(newName);
     if (target && target.connected) {
       this.send(ws, { type: 'error', message: `${newName} is already in the room` });
       return;
     }
 
-    // Remove old entry, add under new name
     this.players.delete(player.name);
     player.name = newName;
     this.players.set(newName, player);
 
-    // Update socket map
     for (const [s, n] of this.sockets) {
       if (n === player.name) {
         this.sockets.set(s, newName);
@@ -539,9 +550,6 @@ class Room {
     }
   }
 
-  // ------------------------------------------------------------------
-  // Host Health Ping
-  // ------------------------------------------------------------------
   startHostPing() {
     this.stopHostPing();
     this.pingMisses = 0;
@@ -593,7 +601,6 @@ class Room {
     this.assignHost();
     if (!this.host && this.allConnected.length === 0) {
       this.destroy();
-      resetRoom();
     }
   }
 
@@ -608,9 +615,6 @@ class Room {
     this.players.clear();
   }
 
-  // ------------------------------------------------------------------
-  // Broadcasting
-  // ------------------------------------------------------------------
   send(ws, msg) {
     if (ws.readyState === 1) {
       ws.send(JSON.stringify(msg));
@@ -676,9 +680,9 @@ class Room {
     });
   }
 
-  async generateQR() {
+  async generateQR(baseUrl) {
     if (!this.qrCodeDataUrl) {
-      this.qrCodeDataUrl = await QRCode.toDataURL(BASE_URL, { width: 256 });
+      this.qrCodeDataUrl = await QRCode.toDataURL(`${baseUrl}/?room=${this.roomId}`, { width: 256 });
     }
     return this.qrCodeDataUrl;
   }
@@ -694,16 +698,36 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json());
 
-let room = new Room();
+const rooms = new Map();
 
-function resetRoom() {
-  room = new Room();
-  console.log('[Geo] Room hard-reset (no players left)');
-}
+app.post('/api/rooms', async (req, res) => {
+  let roomId = generateRoomId();
+  while (rooms.has(roomId)) {
+    roomId = generateRoomId();
+  }
+  const room = new Room(roomId);
+  rooms.set(roomId, room);
+  const baseUrl = getBaseUrl(req);
+  const qr = await room.generateQR(baseUrl);
+  res.json({ roomId, qr, url: `${baseUrl}/?room=${roomId}` });
+});
 
-app.get('/api/qr', async (req, res) => {
-  const qr = await room.generateQR();
-  res.json({ qr, url: BASE_URL });
+app.get('/api/rooms/:roomId', (req, res) => {
+  const room = rooms.get(req.params.roomId);
+  if (!room) {
+    return res.status(404).json({ exists: false });
+  }
+  res.json({ exists: true, playerCount: room.allConnected.length });
+});
+
+app.get('/api/rooms/:roomId/qr', async (req, res) => {
+  const room = rooms.get(req.params.roomId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+  const baseUrl = getBaseUrl(req);
+  const qr = await room.generateQR(baseUrl);
+  res.json({ qr, url: `${baseUrl}/?room=${room.roomId}` });
 });
 
 app.get('/api/countries', (req, res) => {
@@ -725,6 +749,15 @@ wss.on('connection', (ws) => {
 
     switch (msg.type) {
       case 'join': {
+        if (!msg.roomId) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Room ID is required.' }));
+          return;
+        }
+        const room = rooms.get(msg.roomId);
+        if (!room) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Room not found.' }));
+          return;
+        }
         const player = room.addPlayer(ws, msg.name);
         if (player) {
           room.send(ws, { type: 'joined', name: player.name });
@@ -732,49 +765,119 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'pong': {
-        room.handlePong(ws);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.handlePong(ws);
+            break;
+          }
+        }
         break;
       }
       case 'updateSettings': {
-        room.updateSettings(ws, msg.setting, msg.value);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.updateSettings(ws, msg.setting, msg.value);
+            break;
+          }
+        }
         break;
       }
       case 'startRound': {
-        room.startRound(ws);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.startRound(ws);
+            break;
+          }
+        }
         break;
       }
       case 'endGame': {
-        room.endGame(ws);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.endGame(ws);
+            break;
+          }
+        }
         break;
       }
       case 'returnToLobby': {
-        room.returnToLobby(ws);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.returnToLobby(ws);
+            break;
+          }
+        }
         break;
       }
       case 'answer': {
-        room.handleAnswer(ws, msg.answer);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.handleAnswer(ws, msg.answer);
+            break;
+          }
+        }
         break;
       }
       case 'playAgain': {
-        room.returnToLobby(ws);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.returnToLobby(ws);
+            break;
+          }
+        }
         break;
       }
       case 'changeName': {
-        room.changeName(ws, msg.name);
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.changeName(ws, msg.name);
+            break;
+          }
+        }
         break;
       }
     }
   });
 
   ws.on('close', () => {
-    room.removePlayer(ws);
+    for (const [roomId, room] of rooms) {
+      if (room.sockets.has(ws)) {
+        room.removePlayer(ws);
+        if (room.allConnected.length === 0) {
+          room.destroy();
+          rooms.delete(roomId);
+        }
+        break;
+      }
+    }
   });
 
   ws.on('error', () => {
-    room.removePlayer(ws);
+    for (const [roomId, room] of rooms) {
+      if (room.sockets.has(ws)) {
+        room.removePlayer(ws);
+        if (room.allConnected.length === 0) {
+          room.destroy();
+          rooms.delete(roomId);
+        }
+        break;
+      }
+    }
   });
 });
 
+// Cleanup idle empty rooms every 60s
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, room] of rooms) {
+    if (room.allConnected.length === 0 && now - room.lastActivity > ROOM_IDLE_TIMEOUT_MS) {
+      console.log(`[Geo] Cleaning up idle room ${roomId}`);
+      room.destroy();
+      rooms.delete(roomId);
+    }
+  }
+}, 60000);
+
 server.listen(PORT, () => {
-  console.log(`Geo Challenge server running at ${BASE_URL}`);
+  console.log(`Geo Challenge server running at http://${detectLocalIP()}:${PORT}`);
 });

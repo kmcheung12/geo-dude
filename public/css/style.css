@@ -144,6 +144,10 @@ button:hover { background: var(--primary-hover); }
   color: var(--text-muted);
 }
 
+.game-top-area {
+  position: relative;
+}
+
 .host-game-actions {
   position: fixed;
   bottom: 1rem;
@@ -262,8 +266,15 @@ button:disabled {
   color: var(--text-muted);
 }
 
-.host-controls.hidden, .guest-waiting.hidden, #btn-play-again.hidden {
+.host-controls.hidden,
+.guest-waiting.hidden,
+.host-game-actions.hidden,
+#btn-play-again.hidden {
   display: none;
+}
+
+#globe-wrapper {
+  touch-action: none;
 }
 
 .qr-section {
@@ -456,6 +467,16 @@ button:disabled {
   border-color: var(--danger);
 }
 
+.answer-btn.selected {
+  border-color: var(--accent);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.answer-btn.locked {
+  pointer-events: none;
+  opacity: 0.4;
+}
+
 .answer-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -609,6 +630,71 @@ button:disabled {
     border-left: none;
     border-top: 1px solid var(--border);
     max-height: 35vh;
+  }
+  .game-top-area {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+  }
+  .player-chips {
+    flex: 1;
+    padding: 0;
+    background: transparent;
+    border-top: none;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .host-game-actions {
+    position: static;
+    transform: none;
+    display: flex;
+    align-items: center;
+  }
+  .host-game-actions button {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .scoreboard {
+    display: none;
+  }
+  .answer-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    overflow-y: auto;
+    touch-action: pan-y;
+  }
+  .answer-btn {
+    text-align: center;
+    padding: 0.9rem 0.5rem;
+  }
+  .scoreboard {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .scoreboard h4 {
+    width: 100%;
+    margin-bottom: 0;
+    font-size: 0.8rem;
+  }
+  .score-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.85rem;
+    white-space: nowrap;
   }
 }
 

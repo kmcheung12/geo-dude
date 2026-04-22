@@ -10,22 +10,47 @@
 </head>
 <body>
 
-  <!-- Join Screen -->
-  <section id="screen-join" class="screen active">
+  <!-- Landing Screen -->
+  <section id="screen-landing" class="screen active">
     <div class="card">
       <h1>Geo Challenge</h1>
       <p class="subtitle">Local Multiplayer Geography Game</p>
-      <div class="join-qr">
-        <p>Scan to join:</p>
-        <img id="join-qr-code" alt="QR Code">
-        <p id="join-room-url" class="room-url"></p>
-      </div>
       <div class="form-group">
+        <input type="text" id="landing-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
+      </div>
+      <div class="landing-actions">
+        <button id="btn-start-room" class="btn-primary">Start a Room</button>
+        <button id="btn-join-room" class="btn-secondary">Join a Room</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Host Waiting Screen -->
+  <section id="screen-host-wait" class="screen">
+    <div class="card">
+      <h2>Room ID: <span id="host-room-id">----</span></h2>
+      <p class="subtitle">Share this link or QR code</p>
+      <div class="qr-section">
+        <img id="host-qr-code" alt="QR Code">
+        <p id="host-room-url" class="room-url"></p>
+      </div>
+      <div id="host-wait-player-list" class="player-list"></div>
+      <button id="btn-start-from-wait" class="btn-primary">Start Round</button>
+    </div>
+  </section>
+
+  <!-- Join Screen -->
+  <section id="screen-join" class="screen">
+    <div class="card">
+      <h2>Join a Room</h2>
+      <div class="form-group">
+        <input type="text" id="join-room-id" placeholder="Room ID" maxlength="6" autocomplete="off">
         <input type="text" id="join-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
         <button id="btn-join">Join Game</button>
       </div>
       <p id="join-status" class="status">Connecting...</p>
       <p id="join-error" class="error"></p>
+      <button id="btn-back-to-landing" class="btn-text">&larr; Back</button>
     </div>
   </section>
 
@@ -85,8 +110,8 @@
           <button id="btn-start" class="btn-primary">Start Round</button>
           <div class="qr-section">
             <p>Scan to join:</p>
-            <img id="qr-code" alt="QR Code">
-            <p id="room-url" class="room-url"></p>
+            <img id="lobby-qr-code" alt="QR Code">
+            <p id="lobby-room-url" class="room-url"></p>
           </div>
         </div>
         <div id="guest-waiting" class="guest-waiting">
@@ -105,7 +130,13 @@
       </div>
       <div id="game-timer" class="timer">30</div>
     </div>
-    <div id="player-chips" class="player-chips"></div>
+    <div class="game-top-area">
+      <div id="player-chips" class="player-chips"></div>
+      <!-- Host End Game button -->
+      <div id="host-game-actions" class="host-game-actions hidden">
+        <button id="btn-end-game" class="btn-danger">End Game</button>
+      </div>
+    </div>
     <div class="game-body">
       <div class="globe-container">
         <div id="globe-wrapper"></div>
@@ -115,11 +146,6 @@
         <div id="scoreboard" class="scoreboard"></div>
         <div id="answer-panel" class="answer-panel"></div>
       </div>
-    </div>
-
-    <!-- Host End Game button -->
-    <div id="host-game-actions" class="host-game-actions hidden">
-      <button id="btn-end-game" class="btn-danger">End Game</button>
     </div>
 
     <!-- Question End Overlay -->
@@ -163,6 +189,6 @@
   </section>
 
   <script src="/js/globe.js?v=2"></script>
-  <script src="/js/app.js?v=2"></script>
+  <script src="/js/app.js?v=3"></script>
 </body>
 </html>
