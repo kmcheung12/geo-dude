@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geo Challenge</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
+</head>
+<body>
+
+  <!-- Join Screen -->
+  <section id="screen-join" class="screen active">
+    <div class="card">
+      <h1>Geo Challenge</h1>
+      <p class="subtitle">Local Multiplayer Geography Game</p>
+      <div class="join-qr">
+        <p>Scan to join:</p>
+        <img id="join-qr-code" alt="QR Code">
+        <p id="join-room-url" class="room-url"></p>
+      </div>
+      <div class="form-group">
+        <input type="text" id="join-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
+        <button id="btn-join">Join Game</button>
+      </div>
+      <p id="join-status" class="status">Connecting...</p>
+      <p id="join-error" class="error"></p>
+    </div>
+  </section>
+
+  <!-- Lobby Screen -->
+  <section id="screen-lobby" class="screen">
+    <div class="lobby-container">
+      <div class="lobby-left">
+        <h2>Lobby</h2>
+        <div class="name-change">
+          <input type="text" id="change-name-input" placeholder="Your name" maxlength="20" autocomplete="off">
+          <button id="btn-change-name">Change Name</button>
+        </div>
+        <div id="lobby-player-list" class="player-list"></div>
+      </div>
+      <div class="lobby-right">
+        <div id="host-controls" class="host-controls hidden">
+          <h3>Settings</h3>
+          <div class="settings-grid">
+            <label>Mode</label>
+            <select id="setting-mode">
+              <option value="highlight">Name the country</option>
+              <option value="select">Find a country</option>
+            </select>
+
+            <label>Questions per Round</label>
+            <input type="number" id="setting-questions" value="10" min="1" max="50">
+
+            <label>Timer (seconds)</label>
+            <select id="setting-timer">
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+              <option value="15">15s</option>
+              <option value="30" selected>30s</option>
+              <option value="45">45s</option>
+              <option value="60">60s</option>
+              <option value="0">No limit</option>
+            </select>
+
+            <label>List Size</label>
+            <select id="setting-list-size">
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+
+            <label>Question</label>
+            <select id="setting-pool">
+              <option value="random">Random</option>
+              <option value="sameContinent">Same Continent</option>
+            </select>
+          </div>
+          <button id="btn-start" class="btn-primary">Start Round</button>
+          <div class="qr-section">
+            <p>Scan to join:</p>
+            <img id="qr-code" alt="QR Code">
+            <p id="room-url" class="room-url"></p>
+          </div>
+        </div>
+        <div id="guest-waiting" class="guest-waiting">
+          <p>Waiting for host to start the round...</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Game Screen -->
+  <section id="screen-game" class="screen">
+    <div class="game-header">
+      <div class="game-info">
+        <span id="game-round">Round 1</span>
+        <span id="game-question">Question 1/10</span>
+      </div>
+      <div id="game-timer" class="timer">30</div>
+    </div>
+    <div id="player-chips" class="player-chips"></div>
+    <div class="game-body">
+      <div class="globe-container">
+        <div id="globe-wrapper"></div>
+        <div id="game-prompt" class="game-prompt"></div>
+      </div>
+      <div class="game-sidebar">
+        <div id="scoreboard" class="scoreboard"></div>
+        <div id="answer-panel" class="answer-panel"></div>
+      </div>
+    </div>
+
+    <!-- Host End Game button -->
+    <div id="host-game-actions" class="host-game-actions hidden">
+      <button id="btn-end-game" class="btn-danger">End Game</button>
+    </div>
+
+    <!-- Question End Overlay -->
+    <div id="overlay-question-end" class="overlay hidden">
+      <div class="overlay-card">
+        <p id="qe-answer" class="qe-answer"></p>
+        <div id="qe-answers" class="qe-list"></div>
+        <div id="qe-countdown" class="qe-countdown">
+          <svg viewBox="0 0 100 100">
+            <circle class="qe-countdown-bg" cx="50" cy="50" r="45"/>
+            <circle class="qe-countdown-ring" cx="50" cy="50" r="45"/>
+          </svg>
+          <span class="qe-countdown-text">Next</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Round End Overlay -->
+    <div id="overlay-round-end" class="overlay hidden">
+      <div class="overlay-card">
+        <h2>Round Complete</h2>
+        <div id="round-rankings" class="rankings"></div>
+        <div id="round-end-host-actions" class="host-actions hidden">
+          <button id="btn-next-round" class="btn-primary">Start Next Round</button>
+          <button id="btn-return-lobby" class="btn-secondary">Return to Lobby</button>
+        </div>
+        <div id="round-end-guest-waiting" class="guest-waiting">
+          <p>Waiting for host...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game End Overlay -->
+    <div id="overlay-game-end" class="overlay hidden">
+      <div class="overlay-card">
+        <h2>Game Over</h2>
+        <div id="final-rankings" class="rankings"></div>
+        <button id="btn-play-again" class="btn-primary hidden">Play Again</button>
+      </div>
+    </div>
+  </section>
+
+  <script src="/js/globe.js?v=2"></script>
+  <script src="/js/app.js?v=2"></script>
+</body>
+</html>
