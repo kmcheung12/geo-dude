@@ -11,6 +11,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const topojson = require('topojson-client');
+// geoContains used in endProximityGuess (Task 6); geoCentroid used here for centroid precomputation
 const { geoContains, geoCentroid } = require('d3-geo');
 
 // ------------------------------------------------------------------
@@ -56,6 +57,7 @@ function generateRoomId() {
 // ------------------------------------------------------------------
 const topoData = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'public', 'data', 'countries-110m.json'), 'utf8'));
 const countryFeatures = topojson.feature(topoData, topoData.objects.countries).features;
+// countryFeatureMap used in endProximityGuess (Task 6) for polygon hit-testing
 const countryFeatureMap = new Map(); // name -> GeoJSON feature
 for (const f of countryFeatures) {
   if (f.properties.name) countryFeatureMap.set(f.properties.name, f);
@@ -136,6 +138,7 @@ for (const f of microCountries.features) {
       continent,
       isMicro: true,
       coordinates: f.geometry.coordinates,
+      centroid: f.geometry.coordinates,
       color: PASTEL_PALETTE[Math.floor(Math.random() * PASTEL_PALETTE.length)],
     });
   }
