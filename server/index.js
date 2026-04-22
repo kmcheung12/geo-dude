@@ -11,6 +11,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const topojson = require('topojson-client');
+const { geoContains, geoCentroid } = require('d3-geo');
 
 // ------------------------------------------------------------------
 // Config & Network Detection
@@ -55,6 +56,10 @@ function generateRoomId() {
 // ------------------------------------------------------------------
 const topoData = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'public', 'data', 'countries-110m.json'), 'utf8'));
 const countryFeatures = topojson.feature(topoData, topoData.objects.countries).features;
+const countryFeatureMap = new Map(); // name -> GeoJSON feature
+for (const f of countryFeatures) {
+  if (f.properties.name) countryFeatureMap.set(f.properties.name, f);
+}
 const countryContinents = JSON.parse(fs.readFileSync(path.join(__dirname, 'country-continents.json'), 'utf8'));
 const microCountries = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'public', 'data', 'micro-countries.json'), 'utf8'));
 
@@ -117,6 +122,7 @@ const GAME_COUNTRIES = countryFeatures
     name: f.properties.name,
     continent: countryContinents[f.properties.name] || null,
     color: countryColorMap[f.properties.name] || null,
+    centroid: geoCentroid(f), // [lng, lat]
   }))
   .filter(c => c.name && c.continent && c.continent !== 'AN');
 
@@ -279,12 +285,13 @@ class Room {
       return;
     }
 
-    this.players.delete(player.name);
+    const oldName = player.name;
+    this.players.delete(oldName);
     player.name = newName;
     this.players.set(newName, player);
 
     for (const [s, n] of this.sockets) {
-      if (n === player.name) {
+      if (n === oldName) {
         this.sockets.set(s, newName);
         break;
       }
