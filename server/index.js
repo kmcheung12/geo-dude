@@ -154,6 +154,40 @@ function shuffle(array) {
 }
 
 // ------------------------------------------------------------------
+// Proximity Mode Utilities
+// ------------------------------------------------------------------
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+function computeDistance(pin, target) {
+  const { lat, lng } = pin;
+  if (target.isMicro) {
+    const [tLng, tLat] = target.coordinates;
+    const dist = haversineKm(lat, lng, tLat, tLng);
+    return dist <= 100 ? 0 : dist;
+  }
+  const feature = countryFeatureMap.get(target.name);
+  if (feature && geoContains(feature, [lng, lat])) return 0;
+  const [cLng, cLat] = target.centroid;
+  return haversineKm(lat, lng, cLat, cLng);
+}
+
+function rankGuesses(results, N) {
+  const placed = results
+    .filter(r => r.distance !== null)
+    .sort((a, b) => a.distance - b.distance);
+  placed.forEach((r, i) => { r.points = N - i; });
+  return results;
+}
+
+// ------------------------------------------------------------------
 // Room / Game Engine
 // ------------------------------------------------------------------
 class Room {
