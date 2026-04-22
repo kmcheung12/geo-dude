@@ -167,6 +167,8 @@ class Room {
       listSize: 4,
       optionPool: 'random',
       penalty: 0,
+      guessesPerChallenge: 5,
+      challengesPerGame: 5,
     };
     this.players = new Map(); // name -> player
     this.sockets = new Map(); // ws -> name
@@ -316,6 +318,12 @@ class Room {
       } else if (setting === 'timerPerGuess') {
         const n = parseInt(value, 10);
         if (!isNaN(n) && n >= 0) this.settings.timerPerGuess = n;
+      } else if (setting === 'guessesPerChallenge') {
+        const n = parseInt(value, 10);
+        if (!isNaN(n) && n >= 3 && n <= 10) this.settings.guessesPerChallenge = n;
+      } else if (setting === 'challengesPerGame') {
+        const n = parseInt(value, 10);
+        if (!isNaN(n) && n >= 3 && n <= 10) this.settings.challengesPerGame = n;
       } else {
         this.settings[setting] = value;
       }
