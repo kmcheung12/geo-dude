@@ -513,6 +513,71 @@ class Room {
     }
   }
 
+  endProximityGuess() {
+    if (this.state !== 'QUESTION') return;
+    this.state = 'QUESTION_END';
+    this.clearTimers();
+
+    const target = this.challengeTarget;
+    const N = this.activePlayers.length;
+
+    // Build results with distances
+    const results = this.activePlayers.map(p => ({
+      name: p.name,
+      lat: p.pin ? p.pin.lat : null,
+      lng: p.pin ? p.pin.lng : null,
+      distance: p.pin ? computeDistance(p.pin, target) : null,
+      points: 0,
+      exactHit: false,
+    }));
+
+    const exactHitNames = results.filter(r => r.distance === 0).map(r => r.name);
+    const isExactHit = exactHitNames.length > 0;
+    const isLastGuess = (this.currentQuestionIndex + 1) >= this.settings.guessesPerChallenge;
+    const challengeOver = isExactHit || isLastGuess;
+
+    if (isExactHit) {
+      // Exact-hit players: override challenge score to N
+      for (const name of exactHitNames) {
+        const player = this.players.get(name);
+        const result = results.find(r => r.name === name);
+        if (player && result) {
+          player.totalScore = player.totalScore - player.score + N;
+          player.score = N;
+          result.points = N;
+          result.exactHit = true;
+        }
+      }
+      // Other players: no points for this guess (retain accumulated)
+    } else {
+      // Normal guess: rank-based points for all
+      const ranked = rankGuesses(results, N);
+      // Copy points back into original results for broadcast
+      for (const r of ranked) {
+        const orig = results.find(o => o.name === r.name);
+        if (orig) orig.points = r.points;
+        const player = this.players.get(r.name);
+        if (player && r.points > 0) {
+          player.score += r.points;
+          player.totalScore += r.points;
+        }
+      }
+    }
+
+    this.broadcast({ type: 'guessEnd', guesses: results, challengeOver, exactHit: isExactHit });
+    this.broadcastPlayerList();
+
+    const delay = isExactHit ? 2000 : 5000;
+    setTimeout(() => {
+      if (challengeOver) {
+        this.endProximityChallenge();
+      } else {
+        this.currentQuestionIndex++;
+        this.startProximityGuess();
+      }
+    }, delay);
+  }
+
   generateQuestions() {
     const questions = [];
     const count = this.settings.questionsPerRound;
