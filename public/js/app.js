@@ -19,6 +19,8 @@
   let globe = null;
   let globeReady = false;
   let answeredPlayers = new Set();
+  let pinThrottleTimer = null;
+  let playerColorIndex = {};  // name -> index for pin colors
 
   console.log('[Geo] Script loaded. WS URL:', WS_URL);
 
@@ -87,6 +89,23 @@
     btnPlayAgain: getEl('btn-play-again'),
     changeNameInput: getEl('change-name-input'),
     btnChangeName: getEl('btn-change-name'),
+    settingGuesses: getEl('setting-guesses'),
+    settingChallenges: getEl('setting-challenges'),
+    settingRowQuestions: getEl('setting-row-questions'),
+    settingRowListsize: getEl('setting-row-listsize'),
+    settingRowGuesses: getEl('setting-row-guesses'),
+    settingRowChallenges: getEl('setting-row-challenges'),
+    overlayGuessEnd: getEl('overlay-guess-end'),
+    geTitle: getEl('ge-title'),
+    geTable: getEl('ge-table'),
+    geCountdown: getEl('ge-countdown'),
+    overlayChallengeEnd: getEl('overlay-challenge-end'),
+    ceTarget: getEl('ce-target'),
+    ceRankings: getEl('ce-rankings'),
+    challengeEndHostActions: getEl('challenge-end-host-actions'),
+    challengeEndGuestWaiting: getEl('challenge-end-guest-waiting'),
+    btnNextChallenge: getEl('btn-next-challenge'),
+    btnEndChallengeGame: getEl('btn-end-challenge-game'),
   };
 
   // ------------------------------------------------------------------
@@ -291,6 +310,26 @@
         updatePlayerChipsFromSet();
         break;
 
+      case 'pinUpdate': {
+        if (globe && globeReady) {
+          const colorIdx = playerColorIndex[msg.name] ?? 0;
+          globe.updateOtherPin(msg.name, msg.lng, msg.lat, colorIdx);
+        }
+        break;
+      }
+      case 'pinLocked': {
+        if (globe && globeReady) globe.lockPinMarker(msg.name);
+        answeredPlayers.add(msg.name);
+        updatePlayerChipsFromSet();
+        break;
+      }
+      case 'guessEnd':
+        showGuessEnd(msg);
+        break;
+      case 'challengeEnd':
+        showChallengeEnd(msg);
+        break;
+
       case 'ping':
         send({ type: 'pong' });
         break;
@@ -448,10 +487,21 @@
     if (els.settingTimer) els.settingTimer.value = String(settings.timerPerGuess ?? 30);
     if (els.settingListSize) els.settingListSize.value = String(settings.listSize ?? 4);
     if (els.settingPool) els.settingPool.value = settings.optionPool || 'random';
+    updateSettingsVisibility(settings.mode || 'highlight');
+    if (els.settingGuesses)    els.settingGuesses.value    = String(settings.guessesPerChallenge ?? 5);
+    if (els.settingChallenges) els.settingChallenges.value = String(settings.challengesPerGame ?? 5);
   }
 
   function onSettingChange(setting, value) {
     send({ type: 'updateSettings', setting, value });
+  }
+
+  function updateSettingsVisibility(mode) {
+    const isProximity = mode === 'proximity';
+    if (els.settingRowQuestions) els.settingRowQuestions.style.display = isProximity ? 'none' : '';
+    if (els.settingRowListsize)  els.settingRowListsize.style.display  = isProximity ? 'none' : '';
+    if (els.settingRowGuesses)   els.settingRowGuesses.style.display   = isProximity ? '' : 'none';
+    if (els.settingRowChallenges) els.settingRowChallenges.style.display = isProximity ? '' : 'none';
   }
 
   // ------------------------------------------------------------------
@@ -494,6 +544,12 @@
 
   function setupQuestion(msg) {
     const target = msg.targetName;
+
+    if (msg.mode === 'proximity') {
+      if (els.gamePrompt) els.gamePrompt.textContent = 'Where in the world is this country?';
+      renderProximityQuestion(msg);
+      return;
+    }
 
     if (isSpectator) {
       if (els.gamePrompt) els.gamePrompt.textContent = 'Spectator Mode';
@@ -559,6 +615,64 @@
 
       els.answerPanel.appendChild(btn);
     }
+  }
+
+  function renderProximityQuestion(msg) {
+    if (!els.answerPanel) return;
+    els.answerPanel.innerHTML = '';
+
+    // Assign color indices to other players
+    playerColorIndex = {};
+    let idx = 0;
+    if (lastPlayers) {
+      for (const p of lastPlayers) {
+        if (p.name !== myName) playerColorIndex[p.name] = idx++;
+      }
+    }
+
+    globe.setDraggable(true);
+    globe.setZoomable(true);
+    globe.clearAllPins();
+    globe.setMyPinName(myName);
+
+    if (isSpectator) {
+      const note = document.createElement('p');
+      note.style.color = 'var(--text-muted)';
+      note.textContent = 'Spectating — you can place a pin but it won\'t be counted.';
+      els.answerPanel.appendChild(note);
+      return;
+    }
+
+    const hint = document.createElement('p');
+    hint.style.color = 'var(--text-muted)';
+    hint.style.fontSize = '0.9rem';
+    hint.textContent = 'Click the globe to place your pin. Then lock it in.';
+    els.answerPanel.appendChild(hint);
+
+    const lockBtn = document.createElement('button');
+    lockBtn.className = 'btn-primary';
+    lockBtn.id = 'btn-lock-pin';
+    lockBtn.textContent = 'Lock In';
+    lockBtn.disabled = true;
+    lockBtn.style.marginTop = '0.5rem';
+    els.answerPanel.appendChild(lockBtn);
+
+    globe.onPinPlace = (lat, lng) => {
+      lockBtn.disabled = false;
+      clearTimeout(pinThrottleTimer);
+      pinThrottleTimer = setTimeout(() => {
+        send({ type: 'placePin', lat, lng });
+      }, 300);
+    };
+
+    const lockTrigger = () => {
+      if (lockBtn.disabled) return;
+      lockBtn.disabled = true;
+      lockBtn.textContent = 'Locked ✓';
+      send({ type: 'lockPin' });
+    };
+    lockBtn.addEventListener('click', lockTrigger);
+    lockBtn.addEventListener('touchstart', lockTrigger, { passive: true });
   }
 
   function renderSelectMode(target) {
@@ -719,6 +833,110 @@
     els.qeCountdown.classList.remove('animate');
   }
 
+  function showGuessEnd(msg) {
+    if (els.geTitle) {
+      els.geTitle.textContent = msg.exactHit ? 'Exact Hit!' : 'Guess Complete';
+    }
+
+    if (els.geTable) {
+      const sorted = [...msg.guesses].sort((a, b) => {
+        if (a.distance === null) return 1;
+        if (b.distance === null) return -1;
+        return a.distance - b.distance;
+      });
+
+      const table = document.createElement('table');
+      table.className = 'distance-table';
+      table.innerHTML = '<thead><tr><th>Player</th><th>Location</th><th>Distance</th><th>Pts</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+
+      for (const g of sorted) {
+        const tr = document.createElement('tr');
+        if (g.exactHit) tr.className = 'exact-hit';
+        else if (g.distance === null) tr.className = 'no-pin';
+
+        let location = '—';
+        if (g.lat !== null && globe && globeReady) {
+          const found = globe.findCountryAtPoint(g.lng, g.lat);
+          location = found || 'Open Ocean';
+        }
+
+        const dist = g.distance === null ? '—'
+          : g.distance === 0 ? '0 km ✓'
+          : `${Math.round(g.distance).toLocaleString()} km`;
+
+        tr.innerHTML = `
+          <td>${escapeHtml(g.name)}</td>
+          <td>${escapeHtml(location)}</td>
+          <td>${dist}</td>
+          <td>${g.points}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      els.geTable.innerHTML = '';
+      els.geTable.appendChild(table);
+    }
+
+    if (els.overlayGuessEnd) els.overlayGuessEnd.classList.remove('hidden');
+    if (!msg.challengeOver) {
+      startGeCountdown();
+    } else {
+      if (els.geCountdown) els.geCountdown.style.display = 'none';
+    }
+  }
+
+  function startGeCountdown() {
+    if (!els.geCountdown) return;
+    els.geCountdown.style.display = '';
+    els.geCountdown.classList.remove('animate');
+    void els.geCountdown.offsetWidth;
+    els.geCountdown.classList.add('animate');
+  }
+
+  function showChallengeEnd(msg) {
+    if (els.overlayGuessEnd) els.overlayGuessEnd.classList.add('hidden');
+    if (els.geCountdown) els.geCountdown.style.display = '';
+
+    if (globe && globeReady) {
+      globe.setDraggable(false);
+      globe.clearAllPins();
+      globe.highlightCountry(msg.targetName);
+    }
+
+    if (els.ceTarget) els.ceTarget.textContent = `Target: ${msg.targetName}`;
+
+    if (els.ceRankings) {
+      els.ceRankings.innerHTML = '';
+      msg.rankings.forEach((r, i) => {
+        const div = document.createElement('div');
+        div.className = 'rank-item';
+        let posClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+        div.innerHTML = `
+          <div class="rank-pos ${posClass}">${i + 1}</div>
+          <div style="flex:1;text-align:left">${escapeHtml(r.name)}</div>
+          <div>${r.score} pts <span style="color:var(--text-muted);font-size:0.8em">(${r.totalScore} total)</span></div>
+        `;
+        els.ceRankings.appendChild(div);
+      });
+    }
+
+    if (isHost) {
+      if (els.challengeEndHostActions) {
+        els.challengeEndHostActions.classList.remove('hidden');
+        if (els.btnNextChallenge) {
+          els.btnNextChallenge.style.display = msg.isLastChallenge ? 'none' : '';
+        }
+      }
+      if (els.challengeEndGuestWaiting) els.challengeEndGuestWaiting.classList.add('hidden');
+    } else {
+      if (els.challengeEndHostActions) els.challengeEndHostActions.classList.add('hidden');
+      if (els.challengeEndGuestWaiting) els.challengeEndGuestWaiting.classList.remove('hidden');
+    }
+
+    if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.remove('hidden');
+  }
+
   function showRoundEnd(msg) {
     if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.add('hidden');
     if (els.roundRankings) {
@@ -777,6 +995,9 @@
     if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.add('hidden');
     if (els.overlayRoundEnd) els.overlayRoundEnd.classList.add('hidden');
     if (els.overlayGameEnd) els.overlayGameEnd.classList.add('hidden');
+    if (els.overlayGuessEnd)    els.overlayGuessEnd.classList.add('hidden');
+    if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.add('hidden');
+    if (els.geCountdown) els.geCountdown.style.display = '';
     stopQeCountdown();
   }
 
@@ -869,6 +1090,16 @@
       el.addEventListener('change', (e) => {
         const key = settingMap[e.target.id];
         if (key) onSettingChange(key, e.target.value);
+        if (e.target.id === 'setting-mode') updateSettingsVisibility(e.target.value);
+      });
+    });
+
+    const settingMapExtended = { 'setting-guesses': 'guessesPerChallenge', 'setting-challenges': 'challengesPerGame' };
+    [els.settingGuesses, els.settingChallenges].forEach(el => {
+      if (!el) return;
+      el.addEventListener('change', (e) => {
+        const key = settingMapExtended[e.target.id];
+        if (key) onSettingChange(key, e.target.value);
       });
     });
 
@@ -883,11 +1114,14 @@
     if (els.btnNextRound) els.btnNextRound.addEventListener('click', () => send({ type: 'startRound' }));
     if (els.btnReturnLobby) els.btnReturnLobby.addEventListener('click', () => send({ type: 'returnToLobby' }));
     if (els.btnPlayAgain) els.btnPlayAgain.addEventListener('click', () => send({ type: 'playAgain' }));
+    if (els.btnNextChallenge)    els.btnNextChallenge.addEventListener('click', () => send({ type: 'startRound' }));
+    if (els.btnEndChallengeGame) els.btnEndChallengeGame.addEventListener('click', () => send({ type: 'endGame' }));
 
     if (els.btnChangeName) {
       els.btnChangeName.addEventListener('click', () => {
         const newName = els.changeNameInput ? els.changeNameInput.value.trim() : '';
         if (!newName) return;
+        myName = newName;
         localStorage.setItem('geoName', newName);
         send({ type: 'changeName', name: newName });
       });
