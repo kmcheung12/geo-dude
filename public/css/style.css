@@ -253,10 +253,17 @@ button:disabled {
 }
 
 .settings-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
   margin-bottom: 1rem;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .settings-grid label {
@@ -617,6 +624,60 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+/* Proximity mode — globe pins */
+.pin-marker {
+  pointer-events: none;
+}
+
+.pin-marker circle {
+  stroke-width: 2;
+}
+
+.pin-marker text {
+  fill: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.pin-marker.locked circle {
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(255,255,255,0.6));
+}
+
+/* Proximity mode — distance table */
+.distance-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.distance-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.distance-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--bg-card);
+}
+
+.distance-table tr.exact-hit td {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.distance-table tr.no-pin td {
+  color: var(--text-muted);
+}
+
 /* Responsive */
 @media (max-width: 800px) {
   .lobby-container {
@@ -701,6 +762,7 @@ button:disabled {
 @media (max-width: 480px) {
   .card { padding: 1.25rem; }
   .settings-grid { grid-template-columns: 1fr; }
+  .setting-row { grid-template-columns: 1fr; }
   .game-header { padding: 0.5rem 0.75rem; }
   .timer { font-size: 1.2rem; }
 }
