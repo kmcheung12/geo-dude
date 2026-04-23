@@ -24,12 +24,19 @@ function createGlobe(container) {
   let colorMap = {};
 
   const PIN_COLORS = ['#f97316','#a855f7','#ec4899','#06b6d4','#eab308','#14b8a6','#f43f5e','#8b5cf6'];
-  const pins = new Map(); // name -> { lng, lat, color, locked }
+  const pins = new Map(); // name -> { color, current: {lng, lat, locked}|null, past: [] }
   let myPinName = null;
   let gPins = null; // SVG group for pins
   let onPinPlaceCallback = null;
   let dragMoved = false;
   let dragEndTime = 0;
+
+  function getOrCreatePlayerPins(name) {
+    if (!pins.has(name)) {
+      pins.set(name, { color: null, current: null, past: [] });
+    }
+    return pins.get(name);
+  }
 
   function init() {
     container.innerHTML = '';
@@ -153,53 +160,98 @@ function createGlobe(container) {
   function updatePins() {
     if (!gPins) return;
     gPins.selectAll('.pin-marker').each(function(d) {
-      const pin = pins.get(d.name);
-      if (!pin) return;
-      const p = projection([pin.lng, pin.lat]);
+      if (!d) return;
+      const p = projection([d.lng, d.lat]);
       if (!p) return;
       d3.select(this).attr('transform', `translate(${p[0]},${p[1]})`);
     });
   }
 
-  function renderPin(name) {
-    const pin = pins.get(name);
-    if (!pin || !gPins) return;
+  function renderSinglePin(playerName, pin, playerColor, isPast) {
     const p = projection([pin.lng, pin.lat]);
     if (!p) return;
 
-    gPins.selectAll(`.pin-marker[data-name="${CSS.escape(name)}"]`).remove();
+    const initial = playerName.charAt(0).toUpperCase();
+    const classes = ['pin-marker'];
+    if (isPast) {
+      classes.push('past-pin');
+    } else {
+      classes.push('active-pin');
+      if (pin.locked) classes.push('locked');
+    }
 
-    const initial = name.charAt(0).toUpperCase();
     const grp = gPins.append('g')
-      .attr('class', 'pin-marker' + (pin.locked ? ' locked' : ''))
-      .attr('data-name', name)
+      .attr('class', classes.join(' '))
+      .attr('data-player', playerName)
       .attr('transform', `translate(${p[0]},${p[1]})`)
-      .datum({ name });
+      .datum({ lng: pin.lng, lat: pin.lat });
 
-    grp.append('circle').attr('r', 10).attr('fill', pin.color).attr('stroke', '#fff').attr('stroke-width', 2);
-    grp.append('text').text(initial);
+    grp.append('circle')
+      .attr('r', isPast ? 6 : 10)
+      .attr('fill', playerColor)
+      .attr('stroke', '#fff')
+      .attr('stroke-width', isPast ? 1 : 2)
+      .attr('stroke-opacity', isPast ? 0.4 : 1);
+
+    grp.append('text')
+      .text(initial)
+      .attr('fill-opacity', isPast ? 0.5 : 1)
+      .style('font-size', isPast ? '5px' : '8px');
+  }
+
+  function renderPlayerPins(name) {
+    if (!gPins) return;
+    gPins.selectAll(`.pin-marker[data-player="${CSS.escape(name)}"]`).remove();
+
+    const playerPins = pins.get(name);
+    if (!playerPins) return;
+
+    playerPins.past.forEach((pin) => {
+      renderSinglePin(name, pin, playerPins.color, true);
+    });
+
+    if (playerPins.current) {
+      renderSinglePin(name, playerPins.current, playerPins.color, false);
+    }
   }
 
   function placeMyPin(lng, lat) {
     if (!myPinName) return;
-    pins.set(myPinName, { lng, lat, color: '#10b981', locked: false });
-    renderPin(myPinName);
+    const playerPins = getOrCreatePlayerPins(myPinName);
+    playerPins.color = '#10b981';
+    playerPins.current = { lng, lat, locked: false };
+    renderPlayerPins(myPinName);
   }
 
   function updateOtherPin(name, lng, lat, colorIndex) {
     if (name === myPinName) return;
     const color = PIN_COLORS[colorIndex % PIN_COLORS.length];
-    const existing = pins.get(name) || {};
-    pins.set(name, { lng, lat, color, locked: existing.locked || false });
-    renderPin(name);
+    const playerPins = getOrCreatePlayerPins(name);
+    playerPins.color = color;
+    playerPins.current = { lng, lat, locked: playerPins.current?.locked || false };
+    renderPlayerPins(name);
   }
 
   function lockPinMarker(name) {
-    const pin = pins.get(name);
-    if (!pin) return;
-    pin.locked = true;
-    const el = gPins.select(`.pin-marker[data-name="${CSS.escape(name)}"]`);
-    el.classed('locked', true);
+    const playerPins = pins.get(name);
+    if (!playerPins || !playerPins.current) return;
+    playerPins.current.locked = true;
+    renderPlayerPins(name);
+  }
+
+  function archivePins() {
+    for (const playerPins of pins.values()) {
+      if (playerPins.current) {
+        playerPins.past.push(playerPins.current);
+        playerPins.current = null;
+      }
+    }
+    if (gPins) {
+      gPins.selectAll('.pin-marker').remove();
+      for (const [name, playerPins] of pins) {
+        renderPlayerPins(name);
+      }
+    }
   }
 
   function clearAllPins() {
@@ -423,6 +475,7 @@ function createGlobe(container) {
     lockPinMarker,
     clearAllPins,
     setMyPinName(name) { myPinName = name; },
+    archivePins,
     set onCountryClick(fn) { onCountryClickCallback = fn; },
     set onPinPlace(fn) { onPinPlaceCallback = fn; },
   };

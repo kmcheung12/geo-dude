@@ -13,6 +13,8 @@
   let roomId = null;
   let isHost = false;
   let isSpectator = false;
+  let isConnected = false;
+  let hasEverConnected = false;
   let gameState = 'LOBBY';
   let currentMode = 'highlight';
   let hasAnswered = false;
@@ -106,6 +108,8 @@
     challengeEndGuestWaiting: getEl('challenge-end-guest-waiting'),
     btnNextChallenge: getEl('btn-next-challenge'),
     btnEndChallengeGame: getEl('btn-end-challenge-game'),
+    btnSkipQuestion: getEl('btn-skip-question'),
+    btnSkipGuess: getEl('btn-skip-guess'),
   };
 
   // ------------------------------------------------------------------
@@ -160,6 +164,37 @@
   // ------------------------------------------------------------------
   // WebSocket
   // ------------------------------------------------------------------
+  const connBar = document.getElementById('conn-bar');
+  const connBarText = document.getElementById('conn-bar-text');
+  let reconnectedFadeTimer = null;
+
+  function setConnected(connected) {
+    if (isConnected === connected) return;
+    const wasEverConnected = hasEverConnected;
+    isConnected = connected;
+    if (connected) hasEverConnected = true;
+    if (!connBar) return;
+    clearTimeout(reconnectedFadeTimer);
+    if (connected) {
+      if (!wasEverConnected) return;
+      connBar.classList.remove('hidden');
+      connBar.classList.add('reconnected');
+      connBarText.textContent = '✓ Reconnected';
+      connBar.classList.add('visible');
+      reconnectedFadeTimer = setTimeout(() => {
+        connBar.classList.remove('visible');
+        setTimeout(() => {
+          connBar.classList.remove('reconnected');
+          connBar.classList.add('hidden');
+        }, 300);
+      }, 2000);
+    } else {
+      connBar.classList.remove('reconnected', 'hidden');
+      connBarText.textContent = '⚠ Connection lost — trying to reconnect...';
+      connBar.classList.add('visible');
+    }
+  }
+
   function setJoinStatus(text, isError) {
     if (!els.joinStatus) return;
     els.joinStatus.textContent = text;
@@ -189,6 +224,7 @@
     ws.onopen = () => {
       console.log('[Geo] WebSocket open');
       setJoinStatus('Connected');
+      setConnected(true);
       flushQueue();
     };
 
@@ -205,6 +241,7 @@
     ws.onclose = (evt) => {
       console.log('[Geo] WebSocket close', evt.code, evt.reason);
       setJoinStatus('Disconnected. Reconnecting...', true);
+      setConnected(false);
       setTimeout(connect, 1500);
     };
 
@@ -223,6 +260,11 @@
     }
     console.log('[Geo] Queueing message (WS not open):', msg.type);
     msgQueue.push(msg);
+    if (connBar && connBar.classList.contains('visible')) {
+      connBar.classList.remove('nudge');
+      void connBar.offsetWidth;
+      connBar.classList.add('nudge');
+    }
     return false;
   }
 
@@ -272,6 +314,10 @@
         }
         break;
 
+      case 'roundStart':
+        if (globe && globeReady) globe.clearAllPins();
+        break;
+
       case 'question':
         hideOverlays();
         hasAnswered = false;
@@ -301,6 +347,7 @@
 
       case 'lobbyReset':
         hideOverlays();
+        if (globe && globeReady) globe.clearAllPins();
         showScreen('lobby');
         updateLobbyVisibility();
         break;
@@ -632,7 +679,6 @@
 
     globe.setDraggable(true);
     globe.setZoomable(true);
-    globe.clearAllPins();
     globe.setMyPinName(myName);
 
     if (isSpectator) {
@@ -652,7 +698,7 @@
     const lockBtn = document.createElement('button');
     lockBtn.className = 'btn-primary';
     lockBtn.id = 'btn-lock-pin';
-    lockBtn.textContent = 'Lock In';
+    lockBtn.textContent = 'Confirm';
     lockBtn.disabled = true;
     lockBtn.style.marginTop = '0.5rem';
     els.answerPanel.appendChild(lockBtn);
@@ -818,6 +864,7 @@
       else if (!isSpectator) sounds.wrong();
     }
     if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.remove('hidden');
+    if (els.btnSkipQuestion) els.btnSkipQuestion.classList.toggle('hidden', !isHost);
     startQeCountdown();
   }
 
@@ -878,11 +925,15 @@
       els.geTable.appendChild(table);
     }
 
+    if (globe && globeReady) globe.archivePins();
+
     if (els.overlayGuessEnd) els.overlayGuessEnd.classList.remove('hidden');
     if (!msg.challengeOver) {
+      if (els.btnSkipGuess) els.btnSkipGuess.classList.toggle('hidden', !isHost);
       startGeCountdown();
     } else {
       if (els.geCountdown) els.geCountdown.style.display = 'none';
+      if (els.btnSkipGuess) els.btnSkipGuess.classList.add('hidden');
     }
   }
 
@@ -998,6 +1049,8 @@
     if (els.overlayGuessEnd)    els.overlayGuessEnd.classList.add('hidden');
     if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.add('hidden');
     if (els.geCountdown) els.geCountdown.style.display = '';
+    if (els.btnSkipQuestion) els.btnSkipQuestion.classList.add('hidden');
+    if (els.btnSkipGuess) els.btnSkipGuess.classList.add('hidden');
     stopQeCountdown();
   }
 
@@ -1116,6 +1169,8 @@
     if (els.btnPlayAgain) els.btnPlayAgain.addEventListener('click', () => send({ type: 'playAgain' }));
     if (els.btnNextChallenge)    els.btnNextChallenge.addEventListener('click', () => send({ type: 'startRound' }));
     if (els.btnEndChallengeGame) els.btnEndChallengeGame.addEventListener('click', () => send({ type: 'endGame' }));
+    if (els.btnSkipQuestion) els.btnSkipQuestion.addEventListener('click', () => send({ type: 'skipToNext' }));
+    if (els.btnSkipGuess)    els.btnSkipGuess.addEventListener('click', () => send({ type: 'skipToNext' }));
 
     if (els.btnChangeName) {
       els.btnChangeName.addEventListener('click', () => {

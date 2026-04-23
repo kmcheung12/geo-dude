@@ -14,6 +14,43 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+.conn-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: var(--warning);
+  color: #1a1a1a;
+  transform: translateY(-100%);
+  transition: transform 0.25s ease;
+}
+
+.conn-bar.visible {
+  transform: translateY(0);
+}
+
+.conn-bar.reconnected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.conn-bar.nudge {
+  animation: conn-bar-nudge 0.5s ease;
+}
+
+@keyframes conn-bar-nudge {
+  0%   { filter: brightness(1); }
+  25%  { filter: brightness(1.6); }
+  50%  { filter: brightness(0.8); }
+  75%  { filter: brightness(1.5); }
+  100% { filter: brightness(1); }
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background: var(--bg);
@@ -588,6 +625,11 @@ button:disabled {
   color: var(--text);
 }
 
+#btn-skip-question,
+#btn-skip-guess {
+  margin-top: 0.75rem;
+}
+
 .rankings {
   display: flex;
   flex-direction: column;
@@ -642,10 +684,24 @@ button:disabled {
   pointer-events: none;
 }
 
-.pin-marker.locked circle {
+.pin-marker.active-pin.locked circle {
   stroke: #fff;
   stroke-width: 3;
   filter: drop-shadow(0 0 4px rgba(255,255,255,0.6));
+}
+
+.pin-marker.past-pin {
+  opacity: 0.4;
+}
+
+.pin-marker.past-pin circle {
+  r: 6;
+  stroke-width: 1;
+}
+
+.pin-marker.past-pin text {
+  font-size: 5px;
+  fill-opacity: 0.5;
 }
 
 /* Proximity mode — distance table */

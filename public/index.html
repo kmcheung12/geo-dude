@@ -10,6 +10,11 @@
 </head>
 <body>
 
+  <!-- Connection Status Bar -->
+  <div id="conn-bar" class="conn-bar hidden">
+    <span id="conn-bar-text">⚠ Connection lost — trying to reconnect...</span>
+  </div>
+
   <!-- Landing Screen -->
   <section id="screen-landing" class="screen active">
     <div class="card">
@@ -199,6 +204,7 @@
           </svg>
           <span class="qe-countdown-text">Next</span>
         </div>
+        <button id="btn-skip-question" class="btn-secondary hidden">Skip →</button>
       </div>
     </div>
 
@@ -214,6 +220,7 @@
           </svg>
           <span class="qe-countdown-text">Next</span>
         </div>
+        <button id="btn-skip-guess" class="btn-secondary hidden">Skip →</button>
       </div>
     </div>
 
@@ -228,7 +235,7 @@
           <button id="btn-end-challenge-game" class="btn-secondary">End Game</button>
         </div>
         <div id="challenge-end-guest-waiting" class="guest-waiting">
-          <p>Waiting for host...</p>
+          <p>Awaiting host...</p>
         </div>
       </div>
     </div>

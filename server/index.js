@@ -221,6 +221,8 @@ class Room {
     this.questionStartTime = 0;
     this.questionTimer = null;
     this.tickTimer = null;
+    this.nextQuestionTimer = null;
+    this.pendingNextFn = null;
     this.qrCodeDataUrl = null;
     this.pingInterval = null;
     this.pingMisses = 0;
@@ -568,14 +570,14 @@ class Room {
     this.broadcastPlayerList();
 
     const delay = isExactHit ? 2000 : 5000;
-    setTimeout(() => {
+    this.scheduleNextQuestion(delay, () => {
       if (challengeOver) {
         this.endProximityChallenge();
       } else {
         this.currentQuestionIndex++;
         this.startProximityGuess();
       }
-    }, delay);
+    });
   }
 
   endProximityChallenge() {
@@ -739,14 +741,14 @@ class Room {
     });
     this.broadcastPlayerList();
 
-    setTimeout(() => {
+    this.scheduleNextQuestion(5000, () => {
       this.currentQuestionIndex++;
       if (this.currentQuestionIndex < this.questions.length) {
         this.startQuestion();
       } else {
         this.endRound();
       }
-    }, 5000);
+    });
   }
 
   endRound() {
@@ -813,6 +815,32 @@ class Room {
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
+    }
+    if (this.nextQuestionTimer) {
+      clearTimeout(this.nextQuestionTimer);
+      this.nextQuestionTimer = null;
+      this.pendingNextFn = null;
+    }
+  }
+
+  scheduleNextQuestion(delay, fn) {
+    this.pendingNextFn = fn;
+    this.nextQuestionTimer = setTimeout(() => {
+      this.nextQuestionTimer = null;
+      this.pendingNextFn = null;
+      fn();
+    }, delay);
+  }
+
+  skipToNext(ws) {
+    const player = this.getPlayerByWs(ws);
+    if (!player || !player.isHost) return;
+    if (this.nextQuestionTimer && this.pendingNextFn) {
+      clearTimeout(this.nextQuestionTimer);
+      this.nextQuestionTimer = null;
+      const fn = this.pendingNextFn;
+      this.pendingNextFn = null;
+      fn();
     }
   }
 
@@ -1115,6 +1143,15 @@ wss.on('connection', (ws) => {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.handleLockPin(ws);
+            break;
+          }
+        }
+        break;
+      }
+      case 'skipToNext': {
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.skipToNext(ws);
             break;
           }
         }
