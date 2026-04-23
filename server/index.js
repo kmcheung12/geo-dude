@@ -386,8 +386,8 @@ class Room {
 
     // Proximity mode uses its own flow
     if (this.settings.mode === 'proximity') {
-      const fromLobby = this.state === 'LOBBY';
       if (this.state !== 'LOBBY' && this.state !== 'ROUND_END') return;
+      const fromLobby = this.state === 'LOBBY';
       this.startProximityRound(fromLobby);
       return;
     }
