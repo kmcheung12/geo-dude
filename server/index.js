@@ -605,7 +605,7 @@ class Room {
       rankings,
       isLastChallenge,
     });
-    this.broadcastState();
+    if (!isLastChallenge) this.broadcastState();
 
     if (isLastChallenge) {
       setTimeout(() => this.endGameInternal(), 0);
