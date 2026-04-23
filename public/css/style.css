@@ -761,7 +761,6 @@ button:disabled {
 
 @media (max-width: 480px) {
   .card { padding: 1.25rem; }
-  .settings-grid { grid-template-columns: 1fr; }
   .setting-row { grid-template-columns: 1fr; }
   .game-header { padding: 0.5rem 0.75rem; }
   .timer { font-size: 1.2rem; }
