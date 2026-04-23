@@ -490,6 +490,29 @@ class Room {
     }
   }
 
+  handlePlacePin(ws, lat, lng) {
+    if (this.state !== 'QUESTION') return;
+    const player = this.getPlayerByWs(ws);
+    if (!player || player.spectator || player.pinLocked) return;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+
+    player.pin = { lat, lng };
+    this.broadcast({ type: 'pinUpdate', name: player.name, lat, lng });
+  }
+
+  handleLockPin(ws) {
+    if (this.state !== 'QUESTION') return;
+    const player = this.getPlayerByWs(ws);
+    if (!player || player.spectator || !player.pin || player.pinLocked) return;
+
+    player.pinLocked = true;
+    this.broadcast({ type: 'pinLocked', name: player.name });
+
+    if (this.activePlayers.every(p => p.pinLocked)) {
+      this.endProximityGuess();
+    }
+  }
+
   generateQuestions() {
     const questions = [];
     const count = this.settings.questionsPerRound;
@@ -976,6 +999,24 @@ wss.on('connection', (ws) => {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.changeName(ws, msg.name);
+            break;
+          }
+        }
+        break;
+      }
+      case 'placePin': {
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.handlePlacePin(ws, msg.lat, msg.lng);
+            break;
+          }
+        }
+        break;
+      }
+      case 'lockPin': {
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.handleLockPin(ws);
             break;
           }
         }
