@@ -224,6 +224,7 @@ class Room {
     this.qrCodeDataUrl = null;
     this.pingInterval = null;
     this.pingMisses = 0;
+    this.challengeTarget = null;     // current target country for proximity mode
     this.awaitingPong = false;
     this.lastActivity = Date.now();
   }
@@ -275,6 +276,8 @@ class Room {
       }
       existing.connected = true;
       existing.ws = ws;
+      existing.pin = null;
+      existing.pinLocked = false;
       this.sockets.set(ws, name);
       this.sendState(ws);
       if (this.state === 'QUESTION') {
@@ -295,6 +298,8 @@ class Room {
       spectator: this.state !== 'LOBBY',
       answer: null,
       answeredAt: null,
+      pin: null,
+      pinLocked: false,
       ws,
     };
     this.players.set(name, player);
@@ -379,6 +384,14 @@ class Room {
     if (!player || !player.isHost) return;
     if (this.activePlayers.length === 0) return;
 
+    // Proximity mode uses its own flow
+    if (this.settings.mode === 'proximity') {
+      const fromLobby = this.state === 'LOBBY';
+      if (this.state !== 'LOBBY' && this.state !== 'ROUND_END') return;
+      this.startProximityRound(fromLobby);
+      return;
+    }
+
     if (this.state === 'LOBBY') {
       this.currentRound = 1;
       for (const p of this.players.values()) {
@@ -404,6 +417,77 @@ class Room {
     }
     this.broadcast({ type: 'roundStart', round: this.currentRound });
     this.startQuestion();
+  }
+
+  startProximityRound(fromLobby) {
+    if (fromLobby) {
+      this.currentRound = 1;
+      for (const p of this.players.values()) {
+        p.score = 0;
+        p.totalScore = 0;
+        if (p.connected) p.spectator = false;
+      }
+    } else {
+      this.currentRound++;
+    }
+    this.startProximityChallenge();
+  }
+
+  startProximityChallenge() {
+    this.currentQuestionIndex = 0;
+
+    let pool = GAME_COUNTRIES;
+    if (this.settings.optionPool === 'sameContinent') {
+      const byContinent = {};
+      for (const c of GAME_COUNTRIES) {
+        if (!byContinent[c.continent]) byContinent[c.continent] = [];
+        byContinent[c.continent].push(c);
+      }
+      const validContinents = Object.keys(byContinent).filter(k => byContinent[k].length > 0);
+      if (validContinents.length > 0) {
+        const continent = validContinents[Math.floor(Math.random() * validContinents.length)];
+        pool = byContinent[continent];
+      }
+    }
+
+    this.challengeTarget = pool[Math.floor(Math.random() * pool.length)];
+
+    for (const p of this.activePlayers) {
+      p.score = 0;
+      p.pin = null;
+      p.pinLocked = false;
+    }
+
+    this.broadcast({ type: 'roundStart', round: this.currentRound });
+    this.startProximityGuess();
+  }
+
+  startProximityGuess() {
+    this.state = 'QUESTION';
+    for (const p of this.activePlayers) {
+      p.pin = null;
+      p.pinLocked = false;
+    }
+    this.questionStartTime = Date.now();
+
+    this.broadcast({
+      type: 'question',
+      index: this.currentQuestionIndex,
+      totalQuestions: this.settings.guessesPerChallenge,
+      round: this.currentRound,
+      mode: 'proximity',
+      timeLimit: this.settings.timerPerGuess,
+    });
+    this.broadcastState();
+
+    if (this.settings.timerPerGuess > 0) {
+      this.questionTimer = setTimeout(() => this.endProximityGuess(), this.settings.timerPerGuess * 1000);
+      this.tickTimer = setInterval(() => {
+        const elapsed = (Date.now() - this.questionStartTime) / 1000;
+        const remaining = Math.max(0, Math.ceil(this.settings.timerPerGuess - elapsed));
+        this.broadcast({ type: 'tick', remaining });
+      }, 1000);
+    }
   }
 
   generateQuestions() {
