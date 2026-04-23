@@ -13,6 +13,8 @@ const path = require('path');
 const topojson = require('topojson-client');
 // geoContains used in endProximityGuess (Task 6); geoCentroid used here for centroid precomputation
 const { geoContains, geoCentroid } = require('d3-geo');
+const { openDatabase } = require('./db');
+const db = openDatabase(path.join(__dirname, 'geo-challenge.db'));
 
 // ------------------------------------------------------------------
 // Config & Network Detection
@@ -229,6 +231,9 @@ class Room {
     this.challengeTarget = null;     // current target country for proximity mode
     this.awaitingPong = false;
     this.lastActivity = Date.now();
+    this.createdAt = Date.now();
+    this.pinSaveTimers = {};         // playerName -> debounce timer for pin saves
+    this.gameEndCleanupTimer = null;
   }
 
   get activePlayers() {
@@ -281,6 +286,7 @@ class Room {
       existing.pin = null;
       existing.pinLocked = false;
       this.sockets.set(ws, name);
+      db.savePlayer(this.roomId, existing);
       this.sendState(ws);
       if (this.state === 'QUESTION') {
         this.sendCurrentQuestion(ws);
@@ -306,6 +312,7 @@ class Room {
     };
     this.players.set(name, player);
     this.sockets.set(ws, name);
+    db.savePlayer(this.roomId, player);
     this.sendState(ws);
     this.broadcastPlayerList();
     if (!this.host) this.assignHost();
@@ -352,6 +359,10 @@ class Room {
       }
     }
 
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
+
     this.broadcastPlayerList();
   }
 
@@ -377,6 +388,8 @@ class Room {
       } else {
         this.settings[setting] = value;
       }
+      this.lastActivity = Date.now();
+      db.saveRoom(this);
       this.broadcastSettings();
     }
   }
@@ -417,6 +430,9 @@ class Room {
       p.answer = null;
       p.answeredAt = null;
     }
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
     this.broadcast({ type: 'roundStart', round: this.currentRound });
     this.startQuestion();
   }
@@ -460,6 +476,9 @@ class Room {
       p.pinLocked = false;
     }
 
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
     this.broadcast({ type: 'roundStart', round: this.currentRound });
     this.startProximityGuess();
   }
@@ -471,6 +490,9 @@ class Room {
       p.pinLocked = false;
     }
     this.questionStartTime = Date.now();
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
 
     this.broadcast({
       type: 'question',
@@ -500,6 +522,15 @@ class Room {
 
     player.pin = { lat, lng };
     this.broadcast({ type: 'pinUpdate', name: player.name, lat, lng });
+
+    // Debounced save — cancel any existing timer and set a new 500ms one
+    if (this.pinSaveTimers[player.name]) {
+      clearTimeout(this.pinSaveTimers[player.name]);
+    }
+    this.pinSaveTimers[player.name] = setTimeout(() => {
+      this.pinSaveTimers[player.name] = null;
+      db.savePlayer(this.roomId, player);
+    }, 500);
   }
 
   handleLockPin(ws) {
@@ -508,6 +539,14 @@ class Room {
     if (!player || player.spectator || !player.pin || player.pinLocked) return;
 
     player.pinLocked = true;
+
+    // Cancel debounce and save immediately
+    if (this.pinSaveTimers[player.name]) {
+      clearTimeout(this.pinSaveTimers[player.name]);
+      this.pinSaveTimers[player.name] = null;
+    }
+    db.savePlayer(this.roomId, player);
+
     this.broadcast({ type: 'pinLocked', name: player.name });
 
     if (this.activePlayers.every(p => p.pinLocked)) {
@@ -566,6 +605,10 @@ class Room {
       }
     }
 
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
+
     this.broadcast({ type: 'guessEnd', guesses: results, challengeOver, exactHit: isExactHit });
     this.broadcastPlayerList();
 
@@ -582,6 +625,9 @@ class Room {
 
   endProximityChallenge() {
     this.state = 'ROUND_END';
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
 
     const rankings = this.activePlayers
       .map(p => ({ name: p.name, score: p.score, totalScore: p.totalScore }))
@@ -661,6 +707,9 @@ class Room {
       p.answeredAt = null;
     }
     this.questionStartTime = Date.now();
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
     const q = this.questions[this.currentQuestionIndex];
     const payload = {
       type: 'question',
@@ -695,6 +744,7 @@ class Room {
 
     player.answer = answer;
     player.answeredAt = Date.now();
+    db.savePlayer(this.roomId, player);
 
     const allAnswered = this.activePlayers.every(p => p.answer !== null);
     if (allAnswered) {
@@ -733,6 +783,10 @@ class Room {
       correctPlayers[i].totalScore += points;
     }
 
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
+
     this.broadcast({
       type: 'questionEnd',
       correctAnswer,
@@ -753,6 +807,9 @@ class Room {
 
   endRound() {
     this.state = 'ROUND_END';
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
     const rankings = this.activePlayers
       .map(p => ({ name: p.name, score: p.score }))
       .sort((a, b) => b.score - a.score);
@@ -775,11 +832,20 @@ class Room {
   endGameInternal() {
     this.clearTimers();
     this.state = 'GAME_END';
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
     const finalRankings = this.allConnected
       .map(p => ({ name: p.name, totalScore: p.totalScore }))
       .sort((a, b) => b.totalScore - a.totalScore);
     this.broadcast({ type: 'gameEnd', finalRankings });
     this.broadcastState();
+    // Schedule room cleanup from db after 5 minutes
+    const roomId = this.roomId;
+    this.gameEndCleanupTimer = setTimeout(() => {
+      this.gameEndCleanupTimer = null;
+      db.deleteRoom(roomId);
+    }, 5 * 60 * 1000);
   }
 
   endGame(ws) {
@@ -802,6 +868,9 @@ class Room {
       p.totalScore = 0;
       p.spectator = false;
     }
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
     this.broadcast({ type: 'lobbyReset' });
     this.broadcastState();
     this.broadcastPlayerList();
@@ -899,6 +968,14 @@ class Room {
   }
 
   destroy() {
+    for (const timer of Object.values(this.pinSaveTimers)) {
+      clearTimeout(timer);
+    }
+    this.pinSaveTimers = {};
+    if (this.gameEndCleanupTimer) {
+      clearTimeout(this.gameEndCleanupTimer);
+      this.gameEndCleanupTimer = null;
+    }
     this.clearTimers();
     this.stopHostPing();
     for (const [ws] of this.sockets) {
@@ -907,6 +984,7 @@ class Room {
     }
     this.sockets.clear();
     this.players.clear();
+    db.deleteRoom(this.roomId);
   }
 
   send(ws, msg) {
@@ -1001,6 +1079,7 @@ app.post('/api/rooms', async (req, res) => {
   }
   const room = new Room(roomId);
   rooms.set(roomId, room);
+  db.saveRoom(room);
   const baseUrl = getBaseUrl(req);
   const qr = await room.generateQR(baseUrl);
   res.json({ roomId, qr, url: `${baseUrl}/?room=${roomId}` });
