@@ -578,6 +578,40 @@ class Room {
     }, delay);
   }
 
+  endProximityChallenge() {
+    this.state = 'ROUND_END';
+
+    const rankings = this.activePlayers
+      .map(p => ({ name: p.name, score: p.score, totalScore: p.totalScore }))
+      .sort((a, b) => b.score - a.score);
+
+    // Promote spectators for next challenge
+    for (const p of this.players.values()) {
+      if (p.connected && p.spectator) {
+        p.spectator = false;
+        p.score = 0;
+      }
+    }
+
+    const isLastChallenge = this.currentRound >= this.settings.challengesPerGame;
+    const targetCoords = this.challengeTarget.isMicro
+      ? this.challengeTarget.coordinates
+      : this.challengeTarget.centroid;
+
+    this.broadcast({
+      type: 'challengeEnd',
+      targetName: this.challengeTarget.name,
+      targetCoords,
+      rankings,
+      isLastChallenge,
+    });
+    this.broadcastState();
+
+    if (isLastChallenge) {
+      setTimeout(() => this.endGameInternal(), 0);
+    }
+  }
+
   generateQuestions() {
     const questions = [];
     const count = this.settings.questionsPerRound;
@@ -736,21 +770,20 @@ class Room {
     this.broadcastState();
   }
 
-  endGame(ws) {
-    const player = this.getPlayerByWs(ws);
-    if (!player || !player.isHost) return;
-
+  endGameInternal() {
     this.clearTimers();
     this.state = 'GAME_END';
     const finalRankings = this.allConnected
       .map(p => ({ name: p.name, totalScore: p.totalScore }))
       .sort((a, b) => b.totalScore - a.totalScore);
-
-    this.broadcast({
-      type: 'gameEnd',
-      finalRankings,
-    });
+    this.broadcast({ type: 'gameEnd', finalRankings });
     this.broadcastState();
+  }
+
+  endGame(ws) {
+    const player = this.getPlayerByWs(ws);
+    if (!player || !player.isHost) return;
+    this.endGameInternal();
   }
 
   returnToLobby(ws) {
