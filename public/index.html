@@ -69,44 +69,83 @@
         <div id="host-controls" class="host-controls hidden">
           <h3>Settings</h3>
           <div class="settings-grid">
-            <label>Mode</label>
-            <select id="setting-mode">
-              <option value="highlight">Name the country</option>
-              <option value="select">Find a country</option>
-            </select>
+  <div class="setting-row">
+    <label>Mode</label>
+    <select id="setting-mode">
+      <option value="highlight">Name the country</option>
+      <option value="select">Find a country</option>
+      <option value="proximity">Guess the country</option>
+    </select>
+  </div>
 
-            <label>Questions per Round</label>
-            <input type="number" id="setting-questions" value="10" min="1" max="50">
+  <div class="setting-row" id="setting-row-questions">
+    <label>Questions per Round</label>
+    <input type="number" id="setting-questions" value="10" min="1" max="50">
+  </div>
 
-            <label>Timer (seconds)</label>
-            <select id="setting-timer">
-              <option value="5">5s</option>
-              <option value="10">10s</option>
-              <option value="15">15s</option>
-              <option value="30" selected>30s</option>
-              <option value="45">45s</option>
-              <option value="60">60s</option>
-              <option value="0">No limit</option>
-            </select>
+  <div class="setting-row" id="setting-row-listsize">
+    <label>List Size</label>
+    <select id="setting-list-size">
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+    </select>
+  </div>
 
-            <label>List Size</label>
-            <select id="setting-list-size">
-              <option value="3">3</option>
-              <option value="4" selected>4</option>
-              <option value="5">5</option>
-              <option value="6">6</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
-              <option value="9">9</option>
-              <option value="10">10</option>
-            </select>
+  <div class="setting-row" id="setting-row-guesses" style="display:none">
+    <label>Guesses per Challenge</label>
+    <select id="setting-guesses">
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5" selected>5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+    </select>
+  </div>
 
-            <label>Question</label>
-            <select id="setting-pool">
-              <option value="random">Random</option>
-              <option value="sameContinent">Same Continent</option>
-            </select>
-          </div>
+  <div class="setting-row" id="setting-row-challenges" style="display:none">
+    <label>Challenges per Game</label>
+    <select id="setting-challenges">
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5" selected>5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+    </select>
+  </div>
+
+  <div class="setting-row">
+    <label>Timer (seconds)</label>
+    <select id="setting-timer">
+      <option value="5">5s</option>
+      <option value="10">10s</option>
+      <option value="15">15s</option>
+      <option value="30" selected>30s</option>
+      <option value="45">45s</option>
+      <option value="60">60s</option>
+      <option value="0">No limit</option>
+    </select>
+  </div>
+
+  <div class="setting-row">
+    <label>Question</label>
+    <select id="setting-pool">
+      <option value="random">Random</option>
+      <option value="sameContinent">Same Continent</option>
+    </select>
+  </div>
+</div>
           <button id="btn-start" class="btn-primary">Start Round</button>
           <div class="qr-section">
             <p>Scan to join:</p>
@@ -163,6 +202,37 @@
       </div>
     </div>
 
+    <!-- Guess End Overlay (proximity mode) -->
+    <div id="overlay-guess-end" class="overlay hidden">
+      <div class="overlay-card">
+        <h3 id="ge-title">Guess Complete</h3>
+        <div id="ge-table" class="distance-table"></div>
+        <div id="ge-countdown" class="qe-countdown">
+          <svg viewBox="0 0 100 100">
+            <circle class="qe-countdown-bg" cx="50" cy="50" r="45"/>
+            <circle class="qe-countdown-ring" cx="50" cy="50" r="45"/>
+          </svg>
+          <span class="qe-countdown-text">Next</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Challenge End Overlay (proximity mode) -->
+    <div id="overlay-challenge-end" class="overlay hidden">
+      <div class="overlay-card">
+        <h2>Challenge Complete</h2>
+        <p id="ce-target" class="subtitle"></p>
+        <div id="ce-rankings" class="rankings"></div>
+        <div id="challenge-end-host-actions" class="host-actions hidden">
+          <button id="btn-next-challenge" class="btn-primary">Next Challenge</button>
+          <button id="btn-end-challenge-game" class="btn-secondary">End Game</button>
+        </div>
+        <div id="challenge-end-guest-waiting" class="guest-waiting">
+          <p>Waiting for host...</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Round End Overlay -->
     <div id="overlay-round-end" class="overlay hidden">
       <div class="overlay-card">
@@ -188,7 +258,7 @@
     </div>
   </section>
 
-  <script src="/js/globe.js?v=2"></script>
-  <script src="/js/app.js?v=3"></script>
+  <script src="/js/globe.js?v=3"></script>
+  <script src="/js/app.js?v=4"></script>
 </body>
 </html>
