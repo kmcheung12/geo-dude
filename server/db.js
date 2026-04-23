@@ -3,12 +3,20 @@
 /**
  * server/db.js — SQLite persistence for geo-challenge rooms and players.
  *
- * All exported functions are synchronous (better-sqlite3 is sync).
+ * All methods are synchronous (better-sqlite3 is sync).
  * Usage:
  *   const db = require('./db').openDatabase(path);
- *   saveRoom(db, room);
- *   savePlayers(db, room);
- *   ...
+ *   db.saveRoom(room);
+ *   db.savePlayers(room);
+ *   db.savePlayer(roomId, player);
+ *   db.deleteRoom(roomId);
+ *   db.loadAllRooms();
+ *   db.loadPlayersForRoom(roomId);
+ *   db.cleanupOldRooms(cutoffMs);
+ *
+ * openDatabase opens (or creates) the database, enables WAL mode and foreign
+ * keys, creates tables/indexes if missing, compiles all prepared statements
+ * once, and returns a thin wrapper object that closes over those statements.
  */
 
 const Database = require('better-sqlite3');
@@ -16,7 +24,8 @@ const Database = require('better-sqlite3');
 /**
  * Open (or create) the SQLite database at dbPath.
  * Enables WAL mode and foreign keys, creates tables and indexes if missing.
- * Returns the better-sqlite3 Database handle.
+ * Compiles all prepared statements once and returns a wrapper object with
+ * helper methods that close over them.
  */
 function openDatabase(dbPath) {
   const db = new Database(dbPath);
@@ -57,111 +66,115 @@ function openDatabase(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_rooms_activity ON rooms(last_activity);
   `);
 
-  return db;
-}
+  // Compile all statements once
+  const stmts = {
+    insertRoom: db.prepare(`
+      INSERT OR REPLACE INTO rooms
+        (room_id, state, settings, current_round, current_question_index,
+         questions, question_start_time, challenge_target, last_activity, created_at)
+      VALUES
+        (@room_id, @state, @settings, @current_round, @current_question_index,
+         @questions, @question_start_time, @challenge_target, @last_activity, @created_at)
+    `),
+    deletePlayers: db.prepare('DELETE FROM players WHERE room_id = ?'),
+    insertPlayer: db.prepare(`
+      INSERT OR REPLACE INTO players
+        (room_id, name, is_host, score, total_score, spectator,
+         answer, answered_at, pin_lat, pin_lng, pin_locked)
+      VALUES
+        (@room_id, @name, @is_host, @score, @total_score, @spectator,
+         @answer, @answered_at, @pin_lat, @pin_lng, @pin_locked)
+    `),
+    deleteRoom: db.prepare('DELETE FROM rooms WHERE room_id = ?'),
+    selectAllRooms: db.prepare('SELECT * FROM rooms'),
+    selectPlayersByRoom: db.prepare('SELECT * FROM players WHERE room_id = ?'),
+    deleteOldRooms: db.prepare('DELETE FROM rooms WHERE last_activity < ?'),
+  };
 
-/**
- * INSERT OR REPLACE a room row.
- * Accepts a Room instance (or plain object with same shape).
- */
-function saveRoom(db, room) {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO rooms
-      (room_id, state, settings, current_round, current_question_index,
-       questions, question_start_time, challenge_target, last_activity, created_at)
-    VALUES
-      (@room_id, @state, @settings, @current_round, @current_question_index,
-       @questions, @question_start_time, @challenge_target, @last_activity, @created_at)
-  `);
-
-  // Support both room.roomId (Room class) and room.room_id (plain row)
-  const roomId = room.roomId || room.room_id;
-
-  // Read existing created_at so we don't overwrite it on updates
-  const existing = db.prepare('SELECT created_at FROM rooms WHERE room_id = ?').get(roomId);
-  const createdAt = existing ? existing.created_at : (room.lastActivity || Date.now());
-
-  stmt.run({
-    room_id: roomId,
-    state: room.state,
-    settings: JSON.stringify(room.settings),
-    current_round: room.currentRound ?? 0,
-    current_question_index: room.currentQuestionIndex ?? 0,
-    questions: JSON.stringify(room.questions ?? []),
-    question_start_time: room.questionStartTime ?? 0,
-    challenge_target: room.challengeTarget != null ? JSON.stringify(room.challengeTarget) : null,
-    last_activity: room.lastActivity,
-    created_at: createdAt,
-  });
-}
-
-/**
- * In one transaction: delete all players for room, then insert all from room.players Map.
- */
-function savePlayers(db, room) {
-  const roomId = room.roomId || room.room_id;
-
-  const del = db.prepare('DELETE FROM players WHERE room_id = ?');
-  const ins = db.prepare(`
-    INSERT INTO players
-      (room_id, name, is_host, score, total_score, spectator,
-       answer, answered_at, pin_lat, pin_lng, pin_locked)
-    VALUES
-      (@room_id, @name, @is_host, @score, @total_score, @spectator,
-       @answer, @answered_at, @pin_lat, @pin_lng, @pin_locked)
-  `);
-
-  const tx = db.transaction(() => {
-    del.run(roomId);
-    for (const player of room.players.values()) {
-      ins.run(playerToRow(roomId, player));
+  // Build the savePlayers transaction once
+  const savePlayersTx = db.transaction((roomId, players) => {
+    stmts.deletePlayers.run(roomId);
+    for (const player of players) {
+      stmts.insertPlayer.run(playerToRow(roomId, player));
     }
   });
 
-  tx();
-}
+  return {
+    /**
+     * The underlying better-sqlite3 handle, exposed for tests that need to
+     * run raw queries (e.g. PRAGMA checks, sqlite_master queries).
+     */
+    prepare: db.prepare.bind(db),
+    pragma: db.pragma.bind(db),
 
-/**
- * INSERT OR REPLACE a single player row.
- */
-function savePlayer(db, roomId, player) {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO players
-      (room_id, name, is_host, score, total_score, spectator,
-       answer, answered_at, pin_lat, pin_lng, pin_locked)
-    VALUES
-      (@room_id, @name, @is_host, @score, @total_score, @spectator,
-       @answer, @answered_at, @pin_lat, @pin_lng, @pin_locked)
-  `);
-  stmt.run(playerToRow(roomId, player));
-}
+    /**
+     * INSERT OR REPLACE a room row.
+     * Accepts a Room instance or plain object.
+     * Uses room.createdAt if present; otherwise defaults to Date.now().
+     * Does NOT issue a SELECT to find the previous created_at — callers are
+     * expected to carry createdAt on the room object across calls.
+     */
+    saveRoom(room) {
+      const roomId = room.roomId || room.room_id;
+      const createdAt = room.createdAt ?? Date.now();
 
-/**
- * DELETE a room (cascades to players via FK ON DELETE CASCADE).
- */
-function deleteRoom(db, roomId) {
-  db.prepare('DELETE FROM rooms WHERE room_id = ?').run(roomId);
-}
+      stmts.insertRoom.run({
+        room_id: roomId,
+        state: room.state,
+        settings: JSON.stringify(room.settings),
+        current_round: room.currentRound ?? 0,
+        current_question_index: room.currentQuestionIndex ?? 0,
+        questions: JSON.stringify(room.questions ?? []),
+        question_start_time: room.questionStartTime ?? 0,
+        challenge_target: room.challengeTarget != null ? JSON.stringify(room.challengeTarget) : null,
+        last_activity: room.lastActivity,
+        created_at: createdAt,
+      });
+    },
 
-/**
- * SELECT all rooms. Returns array of plain row objects.
- */
-function loadAllRooms(db) {
-  return db.prepare('SELECT * FROM rooms').all();
-}
+    /**
+     * In one transaction: delete all players for room, then insert all from room.players Map.
+     */
+    savePlayers(room) {
+      const roomId = room.roomId || room.room_id;
+      savePlayersTx(roomId, room.players.values());
+    },
 
-/**
- * SELECT all players for a room. Returns array of plain row objects.
- */
-function loadPlayersForRoom(db, roomId) {
-  return db.prepare('SELECT * FROM players WHERE room_id = ?').all(roomId);
-}
+    /**
+     * INSERT OR REPLACE a single player row.
+     */
+    savePlayer(roomId, player) {
+      stmts.insertPlayer.run(playerToRow(roomId, player));
+    },
 
-/**
- * DELETE rooms with last_activity < cutoffMs.
- */
-function cleanupOldRooms(db, cutoffMs) {
-  db.prepare('DELETE FROM rooms WHERE last_activity < ?').run(cutoffMs);
+    /**
+     * DELETE a room (cascades to players via FK ON DELETE CASCADE).
+     */
+    deleteRoom(roomId) {
+      stmts.deleteRoom.run(roomId);
+    },
+
+    /**
+     * SELECT all rooms. Returns array of plain row objects.
+     */
+    loadAllRooms() {
+      return stmts.selectAllRooms.all();
+    },
+
+    /**
+     * SELECT all players for a room. Returns array of plain row objects.
+     */
+    loadPlayersForRoom(roomId) {
+      return stmts.selectPlayersByRoom.all(roomId);
+    },
+
+    /**
+     * DELETE rooms with last_activity < cutoffMs.
+     */
+    cleanupOldRooms(cutoffMs) {
+      stmts.deleteOldRooms.run(cutoffMs);
+    },
+  };
 }
 
 // ------------------------------------------------------------------
@@ -184,13 +197,4 @@ function playerToRow(roomId, player) {
   };
 }
 
-module.exports = {
-  openDatabase,
-  saveRoom,
-  savePlayers,
-  savePlayer,
-  deleteRoom,
-  loadAllRooms,
-  loadPlayersForRoom,
-  cleanupOldRooms,
-};
+module.exports = { openDatabase };

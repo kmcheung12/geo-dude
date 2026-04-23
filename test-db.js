@@ -5,7 +5,7 @@
  * Run with: node test-db.js
  */
 
-const { openDatabase, saveRoom, savePlayers, savePlayer, deleteRoom, loadAllRooms, loadPlayersForRoom, cleanupOldRooms } = require('./server/db');
+const { openDatabase } = require('./server/db');
 
 let passed = 0;
 let failed = 0;
@@ -107,9 +107,9 @@ assert(fkPragma.foreign_keys === 1, 'Foreign keys enabled');
 // -------------------------
 console.log('\n--- saveRoom + loadAllRooms ---');
 const room1 = makeRoom({ roomId: 'ROOM01', state: 'LOBBY', lastActivity: 1000 });
-saveRoom(db, room1);
+db.saveRoom(room1);
 
-let rows = loadAllRooms(db);
+let rows = db.loadAllRooms();
 assert(rows.length === 1, 'loadAllRooms returns 1 row after insert');
 
 const row = rows[0];
@@ -141,9 +141,9 @@ const room2 = makeRoom({
   questionStartTime: 99999,
   lastActivity: 2000,
 });
-saveRoom(db, room2);
+db.saveRoom(room2);
 
-rows = loadAllRooms(db);
+rows = db.loadAllRooms();
 assert(rows.length === 2, 'loadAllRooms returns 2 rows');
 
 const row2 = rows.find(r => r.room_id === 'ROOM02');
@@ -160,10 +160,28 @@ const parsedQ = JSON.parse(row2.questions);
 assert(parsedQ.length === 2, 'questions array length=2');
 
 // Replace (upsert): save room1 again with modified state
-saveRoom(db, { ...room1, state: 'FINISHED' });
-rows = loadAllRooms(db);
+db.saveRoom({ ...room1, state: 'FINISHED' });
+rows = db.loadAllRooms();
 const updatedRow1 = rows.find(r => r.room_id === 'ROOM01');
 assert(updatedRow1.state === 'FINISHED', 'saveRoom upserts (replaces) existing room');
+
+// -------------------------
+// Test: created_at preservation
+// -------------------------
+console.log('\n--- created_at preservation ---');
+const fixedCreatedAt = 42000;
+const room3 = makeRoom({ roomId: 'ROOM03', lastActivity: 1000, createdAt: fixedCreatedAt });
+db.saveRoom(room3);
+
+// Save again with a different lastActivity but same createdAt on object
+db.saveRoom({ ...room3, state: 'FINISHED', lastActivity: 9999, createdAt: fixedCreatedAt });
+
+rows = db.loadAllRooms();
+const room3Row = rows.find(r => r.room_id === 'ROOM03');
+assert(room3Row !== undefined, 'ROOM03 row found after second save');
+assert(room3Row.created_at === fixedCreatedAt, 'created_at preserved across repeated saveRoom calls');
+assert(room3Row.last_activity === 9999, 'last_activity updated on second save');
+assert(room3Row.state === 'FINISHED', 'state updated on second save');
 
 // -------------------------
 // Test: savePlayers + loadPlayersForRoom
@@ -173,9 +191,9 @@ const alice = makePlayer({ name: 'Alice', isHost: true, score: 5, totalScore: 15
 const bob = makePlayer({ name: 'Bob', isHost: false, score: 2, totalScore: 7, answer: 'France', answeredAt: 12345 });
 
 const roomWithPlayers = makeRoom({ roomId: 'ROOM01', players: new Map([['Alice', alice], ['Bob', bob]]) });
-savePlayers(db, roomWithPlayers);
+db.savePlayers(roomWithPlayers);
 
-let playerRows = loadPlayersForRoom(db, 'ROOM01');
+let playerRows = db.loadPlayersForRoom('ROOM01');
 assert(playerRows.length === 2, 'loadPlayersForRoom returns 2 players');
 
 const aliceRow = playerRows.find(p => p.name === 'Alice');
@@ -197,15 +215,15 @@ assert(bobRow.pin_lng === null, 'pin_lng null when no pin');
 
 // savePlayers replaces all players transactionally
 const carol = makePlayer({ name: 'Carol', isHost: true });
-savePlayers(db, { ...roomWithPlayers, players: new Map([['Carol', carol]]) });
-playerRows = loadPlayersForRoom(db, 'ROOM01');
+db.savePlayers({ ...roomWithPlayers, players: new Map([['Carol', carol]]) });
+playerRows = db.loadPlayersForRoom('ROOM01');
 assert(playerRows.length === 1, 'savePlayers replaced all players');
 assert(playerRows[0].name === 'Carol', 'only Carol remains');
 
 // loadPlayersForRoom returns empty for room with no players
 const emptyRoom = makeRoom({ roomId: 'ROOM02' });
-savePlayers(db, emptyRoom);
-playerRows = loadPlayersForRoom(db, 'ROOM02');
+db.savePlayers(emptyRoom);
+playerRows = db.loadPlayersForRoom('ROOM02');
 assert(playerRows.length === 0, 'loadPlayersForRoom returns [] for empty players');
 
 // -------------------------
@@ -213,47 +231,56 @@ assert(playerRows.length === 0, 'loadPlayersForRoom returns [] for empty players
 // -------------------------
 console.log('\n--- savePlayer ---');
 const dave = makePlayer({ name: 'Dave', score: 0, totalScore: 0 });
-savePlayer(db, 'ROOM01', dave);
-playerRows = loadPlayersForRoom(db, 'ROOM01');
+db.savePlayer('ROOM01', dave);
+playerRows = db.loadPlayersForRoom('ROOM01');
 const daveRow = playerRows.find(p => p.name === 'Dave');
 assert(daveRow !== undefined, 'Dave inserted via savePlayer');
 assert(daveRow.score === 0, 'Dave score=0');
 
 // Update Dave's score
-savePlayer(db, 'ROOM01', { ...dave, score: 10, totalScore: 20 });
-playerRows = loadPlayersForRoom(db, 'ROOM01');
+db.savePlayer('ROOM01', { ...dave, score: 10, totalScore: 20 });
+playerRows = db.loadPlayersForRoom('ROOM01');
 const daveUpdated = playerRows.find(p => p.name === 'Dave');
 assert(daveUpdated.score === 10, 'savePlayer upserts score');
 assert(daveUpdated.total_score === 20, 'savePlayer upserts total_score');
+
+// -------------------------
+// Test: FK constraint — inserting player for non-existent room throws
+// -------------------------
+console.log('\n--- FK constraint ---');
+assertThrows(
+  () => db.savePlayer('NONEXISTENT_ROOM', makePlayer({ name: 'Ghost' })),
+  'savePlayer throws when room does not exist (FK enforced)'
+);
 
 // -------------------------
 // Test: deleteRoom (cascade)
 // -------------------------
 console.log('\n--- deleteRoom ---');
 // Ensure ROOM01 has players
-playerRows = loadPlayersForRoom(db, 'ROOM01');
+playerRows = db.loadPlayersForRoom('ROOM01');
 assert(playerRows.length > 0, 'ROOM01 has players before delete');
 
-deleteRoom(db, 'ROOM01');
+db.deleteRoom('ROOM01');
 
-rows = loadAllRooms(db);
+rows = db.loadAllRooms();
 assert(!rows.find(r => r.room_id === 'ROOM01'), 'ROOM01 deleted from rooms');
 
 // cascade: players for ROOM01 should be gone
-playerRows = loadPlayersForRoom(db, 'ROOM01');
+playerRows = db.loadPlayersForRoom('ROOM01');
 assert(playerRows.length === 0, 'players cascade-deleted when room is deleted');
 
 // -------------------------
 // Test: cleanupOldRooms
 // -------------------------
 console.log('\n--- cleanupOldRooms ---');
-saveRoom(db, makeRoom({ roomId: 'OLD1', lastActivity: 100 }));
-saveRoom(db, makeRoom({ roomId: 'OLD2', lastActivity: 200 }));
-saveRoom(db, makeRoom({ roomId: 'NEW1', lastActivity: 9999 }));
+db.saveRoom(makeRoom({ roomId: 'OLD1', lastActivity: 100 }));
+db.saveRoom(makeRoom({ roomId: 'OLD2', lastActivity: 200 }));
+db.saveRoom(makeRoom({ roomId: 'NEW1', lastActivity: 9999 }));
 
-cleanupOldRooms(db, 300);
+db.cleanupOldRooms(300);
 
-rows = loadAllRooms(db);
+rows = db.loadAllRooms();
 const roomIds = rows.map(r => r.room_id);
 assert(!roomIds.includes('OLD1'), 'OLD1 cleaned up');
 assert(!roomIds.includes('OLD2'), 'OLD2 cleaned up');
