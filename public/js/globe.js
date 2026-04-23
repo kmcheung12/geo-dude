@@ -23,6 +23,12 @@ function createGlobe(container) {
   let currentScale = baseScale;
   let colorMap = {};
 
+  const PIN_COLORS = ['#f97316','#a855f7','#ec4899','#06b6d4','#eab308','#14b8a6','#f43f5e','#8b5cf6'];
+  const pins = new Map(); // name -> { lng, lat, color, locked }
+  let myPinName = null;
+  let gPins = null; // SVG group for pins
+  let onPinPlaceCallback = null;
+
   function init() {
     container.innerHTML = '';
     width = container.clientWidth || 600;
@@ -66,6 +72,7 @@ function createGlobe(container) {
       .attr('clip-path', 'url(#globe-clip)');
 
     setupInteractions();
+    gPins = svg.append('g').attr('class', 'pins-layer');
   }
 
   function setupInteractions() {
@@ -111,6 +118,7 @@ function createGlobe(container) {
   function redraw() {
     g.selectAll('path.country').attr('d', path);
     updateMicroCircles();
+    updatePins();
   }
 
   function isPointVisible(coords) {
@@ -134,48 +142,108 @@ function createGlobe(container) {
       .style('display', d => isPointVisible(d.geometry.coordinates) ? 'block' : 'none');
   }
 
+  function updatePins() {
+    if (!gPins) return;
+    gPins.selectAll('.pin-marker').each(function(d) {
+      const pin = pins.get(d.name);
+      if (!pin) return;
+      const p = projection([pin.lng, pin.lat]);
+      if (!p) return;
+      d3.select(this).attr('transform', `translate(${p[0]},${p[1]})`);
+    });
+  }
+
+  function renderPin(name) {
+    const pin = pins.get(name);
+    if (!pin || !gPins) return;
+    const p = projection([pin.lng, pin.lat]);
+    if (!p) return;
+
+    gPins.selectAll(`.pin-marker[data-name="${CSS.escape(name)}"]`).remove();
+
+    const initial = name.charAt(0).toUpperCase();
+    const grp = gPins.append('g')
+      .attr('class', 'pin-marker' + (pin.locked ? ' locked' : ''))
+      .attr('data-name', name)
+      .attr('transform', `translate(${p[0]},${p[1]})`)
+      .datum({ name });
+
+    grp.append('circle').attr('r', 10).attr('fill', pin.color).attr('stroke', '#fff').attr('stroke-width', 2);
+    grp.append('text').text(initial);
+  }
+
+  function placeMyPin(lng, lat) {
+    if (!myPinName) return;
+    pins.set(myPinName, { lng, lat, color: '#10b981', locked: false });
+    renderPin(myPinName);
+  }
+
+  function updateOtherPin(name, lng, lat, colorIndex) {
+    if (name === myPinName) return;
+    const color = PIN_COLORS[colorIndex % PIN_COLORS.length];
+    const existing = pins.get(name) || {};
+    pins.set(name, { lng, lat, color, locked: existing.locked || false });
+    renderPin(name);
+  }
+
+  function lockPinMarker(name) {
+    const pin = pins.get(name);
+    if (!pin) return;
+    pin.locked = true;
+    const el = gPins.select(`.pin-marker[data-name="${CSS.escape(name)}"]`);
+    el.classed('locked', true);
+  }
+
+  function clearAllPins() {
+    pins.clear();
+    myPinName = null;
+    if (gPins) gPins.selectAll('.pin-marker').remove();
+  }
+
+  function findCountryAtPoint(lng, lat) {
+    for (const f of features) {
+      if (d3.geoContains(f, [lng, lat])) return f.properties.name;
+    }
+    return null;
+  }
+
   function baseColor(name) {
     return colorMap[name] || '#1e293b';
   }
 
   function handleClick(event) {
-    if (!draggable || !worldData) return;
+    if (!worldData) return;
     const [mx, my] = d3.pointer(event, svg.node());
     const coords = projection.invert([mx, my]);
     if (!coords) return;
 
-    // Check polygon countries first
-    let found = null;
-    for (const f of features) {
-      if (d3.geoContains(f, coords)) {
-        found = f;
-        break;
+    if (onCountryClickCallback) {
+      // select mode: find country under click
+      let found = null;
+      for (const f of features) {
+        if (d3.geoContains(f, coords)) { found = f; break; }
       }
-    }
-
-    if (!found) {
-      // Check micro-countries by projected proximity
-      let best = null;
-      let bestDist = Infinity;
-      const threshold = 12;
-      for (const f of microFeatures) {
-        const p = projection(f.geometry.coordinates);
-        if (!p) continue;
-        const dx = p[0] - mx;
-        const dy = p[1] - my;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < threshold && dist < bestDist) {
-          bestDist = dist;
-          best = f;
+      if (!found) {
+        let best = null, bestDist = Infinity;
+        for (const f of microFeatures) {
+          const p = projection(f.geometry.coordinates);
+          if (!p) continue;
+          const dx = p[0] - mx, dy = p[1] - my;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 12 && dist < bestDist) { bestDist = dist; best = f; }
         }
+        found = best;
       }
-      found = best;
-    }
-
-    if (found && onCountryClickCallback) {
-      const name = found.properties.name;
-      setSelection(name);
-      onCountryClickCallback(name);
+      if (found) {
+        const name = found.properties.name;
+        setSelection(name);
+        onCountryClickCallback(name);
+      }
+    } else if (myPinName) {
+      // proximity mode: place pin at clicked coordinates
+      const [lng, lat] = coords;
+      placeMyPin(lng, lat);
+      if (onPinPlaceCallback) onPinPlaceCallback(lat, lng);
     }
   }
 
@@ -339,6 +407,13 @@ function createGlobe(container) {
     clearHighlight,
     setDraggable,
     setZoomable,
+    findCountryAtPoint,
+    placeMyPin,
+    updateOtherPin,
+    lockPinMarker,
+    clearAllPins,
+    setMyPinName(name) { myPinName = name; },
     set onCountryClick(fn) { onCountryClickCallback = fn; },
+    set onPinPlace(fn) { onPinPlaceCallback = fn; },
   };
 }
