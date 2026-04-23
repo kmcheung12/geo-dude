@@ -180,11 +180,20 @@ function computeDistance(pin, target) {
 }
 
 function rankGuesses(results, N) {
-  const placed = results
+  const out = results.map(r => ({ ...r, points: 0 }));
+  const placed = out
     .filter(r => r.distance !== null)
     .sort((a, b) => a.distance - b.distance);
-  placed.forEach((r, i) => { r.points = N - i; });
-  return results;
+
+  let i = 0;
+  while (i < placed.length) {
+    let j = i;
+    while (j < placed.length && placed[j].distance === placed[i].distance) j++;
+    const pts = Math.max(0, N - i);
+    for (let k = i; k < j; k++) placed[k].points = pts;
+    i = j;
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------

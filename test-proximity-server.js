@@ -39,15 +39,19 @@ function computeDistanceMicro(pin, target) {
 
 function rankGuesses(results, N) {
   // results: [{ name, distance }]  distance=null means no pin
-  const placed = results
+  const out = results.map(r => ({ ...r, points: 0 }));
+  const placed = out
     .filter(r => r.distance !== null)
     .sort((a, b) => a.distance - b.distance);
 
-  const out = results.map(r => ({ ...r, points: 0 }));
-  placed.forEach((r, i) => {
-    const entry = out.find(o => o.name === r.name);
-    if (entry) entry.points = N - i;
-  });
+  let i = 0;
+  while (i < placed.length) {
+    let j = i;
+    while (j < placed.length && placed[j].distance === placed[i].distance) j++;
+    const pts = Math.max(0, N - i);
+    for (let k = i; k < j; k++) placed[k].points = pts;
+    i = j;
+  }
   return out;
 }
 
@@ -94,8 +98,10 @@ const resultsTie = [
 const rankedTie = rankGuesses(resultsTie, 3);
 const ptsT = name => rankedTie.find(r => r.name === name).points;
 // Ties: Alice and Bob both rank 1st.
-// The test verifies tied players get more than non-tied players.
+// Tied players share the higher rank and both receive the same points.
 assert('Both tied players score higher than third', ptsT('Alice') > ptsT('Carol') && ptsT('Bob') > ptsT('Carol'));
+assert('Tied players receive equal points', ptsT('Alice') === ptsT('Bob'));
+assert('Tied players both get N=3 (top rank points)', ptsT('Alice') === 3 && ptsT('Bob') === 3);
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (!process.argv.includes('--integration')) {
