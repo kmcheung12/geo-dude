@@ -28,6 +28,8 @@ function createGlobe(container) {
   let myPinName = null;
   let gPins = null; // SVG group for pins
   let onPinPlaceCallback = null;
+  let dragMoved = false;
+  let dragEndTime = 0;
 
   function init() {
     container.innerHTML = '';
@@ -78,25 +80,31 @@ function createGlobe(container) {
   function setupInteractions() {
     const drag = d3.drag()
       .filter(() => draggable)
+      .on('start', () => { dragMoved = false; })
       .on('drag', (event) => {
+        if (Math.abs(event.dx) > 0.5 || Math.abs(event.dy) > 0.5) dragMoved = true;
         const k = 0.25;
         rotation[0] += event.dx * k;
         rotation[1] -= event.dy * k;
         rotation[1] = Math.max(-90, Math.min(90, rotation[1]));
         projection.rotate(rotation);
         redraw();
-      });
+      })
+      .on('end', () => { dragEndTime = Date.now(); });
 
     const zoom = d3.zoom()
       .scaleExtent([baseScale * 0.6, baseScale * 2.5])
       .filter(event => {
         if (!zoomable) return false;
+        // Wheel zoom always allowed
+        if (event.type === 'wheel') return true;
         // On touch devices, only allow pinch (multi-touch) for zoom.
         // Single-finger drag should rotate the globe via drag behavior.
         if (event.type === 'touchstart') {
           return event.touches.length > 1;
         }
-        return !event.ctrlKey && !event.button;
+        // Reject pointer/mouse down so drag can handle rotation
+        return false;
       })
       .on('zoom', (event) => {
         const newScale = event.transform.k;
@@ -213,6 +221,8 @@ function createGlobe(container) {
 
   function handleClick(event) {
     if (!worldData) return;
+    // Suppress post-drag clicks (mobile browsers synthesize click after touchend)
+    if (dragMoved && (Date.now() - dragEndTime) < 400) return;
     const [mx, my] = d3.pointer(event, svg.node());
     const coords = projection.invert([mx, my]);
     if (!coords) return;

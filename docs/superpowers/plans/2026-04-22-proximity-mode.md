@@ -1174,6 +1174,15 @@ git add public/js/globe.js
 git commit -m "feat: globe pin layer — placeMyPin, updateOtherPin, lockPinMarker, findCountryAtPoint"
 ```
 
+> **Globe interaction requirement (all modes):**
+> | Mode | Zoom | Rotate |
+> |---|---|---|
+> | highlight | ✓ | ✗ |
+> | select | ✓ | ✓ |
+> | proximity | ✓ | ✓ |
+>
+> In `setupInteractions`, the drag behaviour sets `dragMoved = true` once the pointer moves more than 0.5 px during a drag, and records `dragEndTime = Date.now()` on `dragend`. `handleClick` checks `(dragMoved && Date.now() - dragEndTime < 400)` and aborts if true. This prevents the synthetic `click` that mobile browsers fire after `touchend` from placing a pin immediately after a rotation gesture.
+
 ---
 
 ## Task 11: app.js — proximity client logic

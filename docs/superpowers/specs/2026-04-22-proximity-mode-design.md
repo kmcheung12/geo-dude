@@ -18,6 +18,18 @@ The mode reuses the existing round/question state machine. Terminology mapping:
 
 ---
 
+## Globe Interaction Matrix
+
+| Mode | Zoom | Rotate (drag) |
+|---|---|---|
+| Name the country (`highlight`) | ✓ | ✗ |
+| Find a country (`select`) | ✓ | ✓ |
+| Guess the country (`proximity`) | ✓ | ✓ |
+
+On mobile, single-finger drag rotates; pinch zooms. In proximity mode a tap places a pin. Because mobile browsers fire a `click` event after `touchend`, `globe.js` suppresses post-drag clicks: the drag behavior tracks whether the pointer actually moved (`dragMoved`). If it did, any `click` fired within 400 ms of `dragend` is ignored, preventing a trailing tap from placing a pin after a rotation gesture.
+
+---
+
 ## Settings
 
 Two new settings, active only when `mode: 'proximity'`. Existing `questionsPerRound` and `listSize` do not apply and are hidden from the UI in this mode.
