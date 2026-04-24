@@ -1278,6 +1278,86 @@ setInterval(() => {
   }
 }, 60000);
 
+function reloadRoomsFromDB() {
+  db.cleanupOldRooms(Date.now() - ROOM_IDLE_TIMEOUT_MS);
+
+  const roomRows = db.loadAllRooms();
+  let restored = 0;
+
+  for (const row of roomRows) {
+    try {
+      const room = new Room(row.room_id);
+
+      room.state = row.state;
+      room.settings = JSON.parse(row.settings);
+      room.currentRound = row.current_round;
+      room.currentQuestionIndex = row.current_question_index;
+      room.questions = JSON.parse(row.questions);
+      room.questionStartTime = row.question_start_time;
+      room.challengeTarget = row.challenge_target ? JSON.parse(row.challenge_target) : null;
+      room.lastActivity = row.last_activity;
+      room.createdAt = row.created_at;
+
+      const playerRows = db.loadPlayersForRoom(row.room_id);
+      for (const pr of playerRows) {
+        const player = {
+          name: pr.name,
+          ws: null,
+          isHost: pr.is_host === 1,
+          connected: false,
+          score: pr.score,
+          totalScore: pr.total_score,
+          spectator: pr.spectator === 1,
+          answer: pr.answer,
+          answeredAt: pr.answered_at,
+          joinedAt: pr.answered_at ?? room.lastActivity,
+          pin: (pr.pin_lat !== null && pr.pin_lng !== null) ? { lat: pr.pin_lat, lng: pr.pin_lng } : null,
+          pinLocked: pr.pin_locked === 1,
+        };
+        room.players.set(pr.name, player);
+      }
+
+      if (room.state === 'QUESTION' && room.settings.timerPerGuess > 0) {
+        const isProximity = room.settings.mode === 'proximity';
+        const remaining = room.settings.timerPerGuess * 1000 - (Date.now() - room.questionStartTime);
+
+        if (remaining <= 0) {
+          if (isProximity) {
+            room.endProximityGuess();
+          } else {
+            room.endQuestion();
+          }
+        } else {
+          if (isProximity) {
+            room.questionTimer = setTimeout(() => room.endProximityGuess(), remaining);
+          } else {
+            room.questionTimer = setTimeout(() => room.endQuestion(), remaining);
+          }
+          room.tickTimer = setInterval(() => {
+            const elapsed = (Date.now() - room.questionStartTime) / 1000;
+            const rem = Math.max(0, Math.ceil(room.settings.timerPerGuess - elapsed));
+            if (rem === 0) return;
+            room.broadcast({ type: 'tick', remaining: rem });
+          }, 1000);
+        }
+      }
+
+      rooms.set(row.room_id, room);
+      restored++;
+    } catch (e) {
+      console.error(`[Geo] Failed to restore room ${row.room_id}:`, e.message);
+    }
+  }
+
+  console.log(`[Geo] Restored ${restored} room(s) from database`);
+}
+
+reloadRoomsFromDB();
+
 server.listen(PORT, () => {
   console.log(`Geo Challenge server running at http://${detectLocalIP()}:${PORT}`);
 });
+
+if (require.main !== module) {
+  module.exports = { reloadRoomsFromDB, rooms, db };
+}
