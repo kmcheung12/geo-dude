@@ -15,6 +15,7 @@
   let isSpectator = false;
   let isConnected = false;
   let hasEverConnected = false;
+  let hasPreviouslyConnected = false;
   let gameState = 'LOBBY';
   let currentMode = 'highlight';
   let hasAnswered = false;
@@ -225,6 +226,9 @@
       console.log('[Geo] WebSocket open');
       setJoinStatus('Connected');
       setConnected(true);
+      if (roomId && hasPreviouslyConnected && myName) {
+        send({ type: 'join', name: myName, roomId });
+      }
       flushQueue();
     };
 
@@ -241,6 +245,7 @@
     ws.onclose = (evt) => {
       console.log('[Geo] WebSocket close', evt.code, evt.reason);
       setJoinStatus('Disconnected. Reconnecting...', true);
+      hasPreviouslyConnected = true;
       setConnected(false);
       setTimeout(connect, 1500);
     };
@@ -276,6 +281,7 @@
       case 'joined':
         myName = msg.name;
         localStorage.setItem('geoName', myName);
+        localStorage.setItem('geoRoom', roomId);
         console.log('[Geo] Joined as:', myName);
         break;
 
@@ -377,12 +383,17 @@
         showChallengeEnd(msg);
         break;
 
+      case 'restore':
+        applyRestore(msg);
+        break;
+
       case 'ping':
         send({ type: 'pong' });
         break;
 
       case 'roomClosed':
         console.log('[Geo] Room closed:', msg.reason);
+        localStorage.removeItem('geoRoom');
         showScreen('landing');
         if (els.joinError) els.joinError.textContent = msg.reason || 'Room has ended. Please rejoin.';
         break;
@@ -1042,6 +1053,135 @@
     if (els.btnPlayAgain) els.btnPlayAgain.classList.toggle('hidden', !isHost);
   }
 
+  // ------------------------------------------------------------------
+  // Restore (reconnect state replay)
+  // ------------------------------------------------------------------
+  function applyRestore(msg) {
+    // 1. Set local state flags
+    isHost = msg.me.isHost;
+    isSpectator = msg.me.spectator;
+    gameState = msg.gameState;
+    currentMode = msg.question?.mode ?? msg.settings.mode;
+
+    // 2. Sync UI state
+    updateSettingsUI(msg.settings);
+    renderPlayerList(msg.players);
+    updatePlayerChips(msg.players);
+    updateHostGameActions();
+
+    // 3. Show correct screen
+    if (msg.gameState === 'LOBBY') {
+      showScreen('lobby');
+      updateLobbyVisibility();
+      return;
+    }
+    showScreen('game');
+
+    // 4. Render per-state
+    switch (msg.gameState) {
+      case 'QUESTION': {
+        hideOverlays();
+        renderQuestion(msg.question);
+        // For proximity mode: replay other players' pins once globe is ready
+        if (msg.question.mode === 'proximity' && msg.pins?.length) {
+          // Build playerColorIndex from players list (same logic as renderProximityQuestion)
+          playerColorIndex = {};
+          let idx = 0;
+          for (const p of msg.players) {
+            if (p.name !== myName) playerColorIndex[p.name] = idx++;
+          }
+          const replayPins = () => {
+            if (!globe || !globeReady) return;
+            for (const pin of msg.pins) {
+              if (pin.name !== myName) {
+                const colorIdx = playerColorIndex[pin.name] ?? 0;
+                globe.updateOtherPin(pin.name, pin.lng, pin.lat, colorIdx);
+                if (pin.locked) globe.lockPinMarker(pin.name);
+              }
+            }
+          };
+          if (globe && globeReady) {
+            replayPins();
+          } else {
+            // Globe will be ready after renderQuestion's load() promise resolves;
+            // patch globeReady setter via polling is impractical, so we hook into
+            // the existing pattern: renderQuestion creates the globe and calls
+            // setupQuestion in the .then(). We schedule a one-shot check.
+            const waitForGlobe = setInterval(() => {
+              if (globe && globeReady) {
+                clearInterval(waitForGlobe);
+                clearTimeout(globeWaitTimeout);
+                replayPins();
+              }
+            }, 100);
+            const globeWaitTimeout = setTimeout(() => clearInterval(waitForGlobe), 10000);
+          }
+        }
+        break;
+      }
+
+      case 'QUESTION_END': {
+        hideOverlays();
+        renderQuestion(msg.question);
+        if (msg.lastGuessEnd !== null) {
+          // Proximity mode QUESTION_END
+          showGuessEnd(msg.lastGuessEnd);
+          if (msg.pins?.length) {
+            // Build playerColorIndex
+            playerColorIndex = {};
+            let idx = 0;
+            for (const p of msg.players) {
+              if (p.name !== myName) playerColorIndex[p.name] = idx++;
+            }
+            const replayPins = () => {
+              if (!globe || !globeReady) return;
+              for (const pin of msg.pins) {
+                const colorIdx = pin.name === myName ? -1 : (playerColorIndex[pin.name] ?? 0);
+                if (pin.name !== myName) globe.updateOtherPin(pin.name, pin.lng, pin.lat, colorIdx);
+                if (pin.locked) globe.lockPinMarker(pin.name);
+              }
+              globe.archivePins();
+            };
+            if (globe && globeReady) {
+              replayPins();
+            } else {
+              const waitForGlobe = setInterval(() => {
+                if (globe && globeReady) {
+                  clearInterval(waitForGlobe);
+                  clearTimeout(globeWaitTimeout);
+                  replayPins();
+                }
+              }, 100);
+              const globeWaitTimeout = setTimeout(() => clearInterval(waitForGlobe), 10000);
+            }
+          }
+        } else {
+          // Highlight/select mode QUESTION_END
+          showQuestionEnd(msg.lastQuestionEnd);
+        }
+        break;
+      }
+
+      case 'ROUND_END': {
+        hideOverlays();
+        if (msg.lastChallengeEnd !== null) {
+          showChallengeEnd(msg.lastChallengeEnd);
+        } else {
+          showRoundEnd(msg.lastRoundEnd);
+        }
+        break;
+      }
+
+      case 'GAME_END': {
+        showGameEnd(msg.lastGameEnd);
+        break;
+      }
+
+      default:
+        console.warn('[Geo] applyRestore: unhandled gameState', msg.gameState);
+    }
+  }
+
   function hideOverlays() {
     if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.add('hidden');
     if (els.overlayRoundEnd) els.overlayRoundEnd.classList.add('hidden');
@@ -1121,6 +1261,11 @@
     const urlRoomId = new URLSearchParams(location.search).get('room');
     if (urlRoomId && els.joinRoomId) {
       els.joinRoomId.value = urlRoomId.toUpperCase();
+    }
+    const savedRoomId = localStorage.getItem('geoRoom');
+    if (!urlRoomId && savedRoomId && els.joinRoomId) {
+      els.joinRoomId.value = savedRoomId;
+      roomId = savedRoomId;
     }
 
     // Host wait screen start button
