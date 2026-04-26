@@ -649,6 +649,7 @@
       const btn = document.createElement('button');
       btn.className = 'answer-btn';
       btn.textContent = opt;
+      btn.dataset.answer = opt;
 
       let triggered = false;
       const trigger = () => {
@@ -817,7 +818,7 @@
     // Mark answer buttons correct/wrong (highlight mode)
     if (els.answerPanel) {
       for (const btn of els.answerPanel.querySelectorAll('.answer-btn')) {
-        if (btn.textContent === msg.correctAnswer) {
+        if (btn.dataset.answer === msg.correctAnswer) {
           btn.classList.add('correct');
         } else if (btn.classList.contains('selected')) {
           btn.classList.add('wrong');
