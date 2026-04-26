@@ -332,7 +332,7 @@ function createGlobe(container) {
         .attr('stroke', '#1a6ea8')
         .attr('stroke-width', 0.5)
         .on('mouseover', function(event, d) {
-          if (draggable) d3.select(this).attr('fill', '#334155');
+          if (draggable) d3.select(this).attr('fill', '#2a5a8c');
         })
         .on('mouseout', function(event, d) {
           if (draggable && d3.select(this).attr('data-state') !== 'selected') {
@@ -365,7 +365,7 @@ function createGlobe(container) {
         .style('pointer-events', 'none')
         .style('display', d => isPointVisible(d.geometry.coordinates) ? 'block' : 'none')
         .on('mouseover', function(event, d) {
-          if (draggable) d3.select(this).attr('fill', '#334155');
+          if (draggable) d3.select(this).attr('fill', '#2a5a8c');
         })
         .on('mouseout', function(event, d) {
           if (draggable && d3.select(this).attr('data-state') !== 'selected') {
