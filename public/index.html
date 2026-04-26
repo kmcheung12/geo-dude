@@ -187,8 +187,18 @@
         <div id="game-prompt" class="game-prompt"></div>
       </div>
       <div class="game-sidebar">
-        <div id="scoreboard" class="scoreboard"></div>
         <div id="answer-panel" class="answer-panel"></div>
+        <div id="panel-spectator-watch" class="hidden" style="padding:1rem">
+          <p class="text-muted">You are watching. Next round you can play!</p>
+        </div>
+        <div id="panel-proximity" class="hidden" style="padding:1rem">
+          <p class="text-muted" style="font-size:0.9rem">Click the globe to place your pin. Then lock it in.</p>
+          <button id="btn-lock-pin" class="btn-primary" style="margin-top:0.5rem" disabled>Confirm</button>
+        </div>
+        <div id="panel-select" class="hidden" style="padding:1rem">
+          <p class="text-muted" style="font-size:0.9rem">Click a country on the globe to select it.</p>
+          <button id="btn-confirm-select" class="btn-primary" style="margin-top:0.5rem" disabled>Confirm Selection</button>
+        </div>
       </div>
     </div>
 
@@ -202,9 +212,11 @@
             <circle class="qe-countdown-bg" cx="50" cy="50" r="45"/>
             <circle class="qe-countdown-ring" cx="50" cy="50" r="45"/>
           </svg>
-          <span class="qe-countdown-text">Next</span>
+          <span class="qe-countdown-text">
+            <span>Next</span>
+            <span>&#8594;</span>
+          </span>
         </div>
-        <button id="btn-skip-question" class="btn-secondary hidden">Skip →</button>
       </div>
     </div>
 

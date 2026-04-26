@@ -10,7 +10,7 @@ function createGlobe(container) {
   let minDim = Math.min(width, height);
   let baseScale = minDim * 0.45;
 
-  let svg, path, projection, g;
+  let svg, path, projection, g, zoom;
   let features = [];
   let microFeatures = [];
   let worldData = null;
@@ -99,8 +99,8 @@ function createGlobe(container) {
       })
       .on('end', () => { dragEndTime = Date.now(); });
 
-    const zoom = d3.zoom()
-      .scaleExtent([baseScale * 0.6, baseScale * 2.5])
+    zoom = d3.zoom()
+      .scaleExtent([baseScale * 0.6, baseScale * 6])
       .filter(event => {
         if (!zoomable) return false;
         // Wheel zoom always allowed
@@ -448,6 +448,27 @@ function createGlobe(container) {
       .attr('data-state', null);
   }
 
+  function resize() {
+    width = container.clientWidth || 600;
+    height = container.clientHeight || 500;
+    minDim = Math.min(width, height);
+    baseScale = minDim * 0.45;
+
+    svg.attr('viewBox', `0 0 ${width} ${height}`);
+    projection.translate([width / 2, height / 2]);
+    svg.select('circle.ocean').attr('cx', width / 2).attr('cy', height / 2);
+    svg.select('#globe-clip circle').attr('cx', width / 2).attr('cy', height / 2);
+
+    zoom.scaleExtent([baseScale * 0.6, baseScale * 6]);
+    // Clamp currentScale into the new extent
+    currentScale = Math.max(baseScale * 0.6, Math.min(currentScale, baseScale * 6));
+    projection.scale(currentScale);
+    svg.select('circle.ocean').attr('r', currentScale);
+    svg.select('#globe-clip circle').attr('r', currentScale);
+    svg.call(zoom.transform, d3.zoomIdentity.scale(currentScale));
+    redraw();
+  }
+
   function setDraggable(enabled) {
     draggable = enabled;
     updateCursor();
@@ -478,5 +499,6 @@ function createGlobe(container) {
     archivePins,
     set onCountryClick(fn) { onCountryClickCallback = fn; },
     set onPinPlace(fn) { onPinPlaceCallback = fn; },
+    resize,
   };
 }

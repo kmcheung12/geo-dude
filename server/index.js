@@ -81,40 +81,72 @@ const PASTEL_PALETTE = [
 ];
 
 const neighbors = topojson.neighbors(topoData.objects.countries.geometries);
-const colorAssignments = new Array(countryFeatures.length).fill(-1);
+const n = countryFeatures.length;
+const colorAssignments = new Array(n).fill(-1);
 const usageCounts = new Array(PASTEL_PALETTE.length).fill(0);
 
-for (let i = 0; i < countryFeatures.length; i++) {
-  const used = new Set();
-  for (const n of neighbors[i]) {
-    if (colorAssignments[n] !== -1) used.add(colorAssignments[n]);
-  }
-  const valid = [];
-  for (let c = 0; c < PASTEL_PALETTE.length; c++) {
-    if (!used.has(c)) valid.push(c);
-  }
-  let best = valid[0];
-  for (let v = 1; v < valid.length; v++) {
-    if (usageCounts[valid[v]] < usageCounts[best]) {
-      best = valid[v];
+// DSatur graph-colouring: always colour the vertex with the most distinctly-coloured
+// neighbours first. This avoids palette exhaustion that naive sequential greedy
+// produces for high-degree nodes (e.g. China with 14 neighbours).
+{
+  const saturation = new Array(n).fill(0);           // distinct neighbour colours seen
+  const neighborColorSets = Array.from({ length: n }, () => new Set());
+  const degree = neighbors.map(nb => nb.length);
+
+  for (let step = 0; step < n; step++) {
+    // Pick the uncoloured vertex with the highest saturation; break ties by degree.
+    let v = -1;
+    for (let i = 0; i < n; i++) {
+      if (colorAssignments[i] !== -1) continue;
+      if (v === -1
+        || saturation[i] > saturation[v]
+        || (saturation[i] === saturation[v] && degree[i] > degree[v])) {
+        v = i;
+      }
+    }
+
+    // Assign the least-used palette colour not already used by a neighbour.
+    const usedByNeighbors = neighborColorSets[v];
+    let best = -1;
+    for (let c = 0; c < PASTEL_PALETTE.length; c++) {
+      if (!usedByNeighbors.has(c)) {
+        if (best === -1 || usageCounts[c] < usageCounts[best]) best = c;
+      }
+    }
+
+    colorAssignments[v] = best;
+    usageCounts[best]++;
+
+    // Propagate the new colour into each uncoloured neighbour's saturation set.
+    for (const nb of neighbors[v]) {
+      if (colorAssignments[nb] === -1 && !neighborColorSets[nb].has(best)) {
+        neighborColorSets[nb].add(best);
+        saturation[nb]++;
+      }
     }
   }
-  colorAssignments[i] = best;
-  usageCounts[best]++;
 }
 
 const countryColorMap = {};
-for (let i = 0; i < countryFeatures.length; i++) {
+for (let i = 0; i < n; i++) {
   const name = countryFeatures[i].properties.name;
   if (name) {
     countryColorMap[name] = PASTEL_PALETTE[colorAssignments[i]];
   }
 }
 
-for (let c = 0; c < PASTEL_PALETTE.length; c++) {
-  if (usageCounts[c] === 0) {
-    console.warn('[Geo] Warning: palette colour', c, PASTEL_PALETTE[c], 'was not used on the map');
+// Verify no two neighbours share a colour (sanity check).
+let conflicts = 0;
+for (let i = 0; i < n; i++) {
+  for (const nb of neighbors[i]) {
+    if (nb > i && colorAssignments[i] !== -1 && colorAssignments[i] === colorAssignments[nb]) {
+      console.warn('[Geo] Colour conflict:', countryFeatures[i].properties.name, '↔', countryFeatures[nb].properties.name);
+      conflicts++;
+    }
   }
+}
+if (conflicts === 0) {
+  console.log('[Geo] Graph colouring: no conflicts across', n, 'countries with', PASTEL_PALETTE.length, 'colours');
 }
 
 // ------------------------------------------------------------------
@@ -271,8 +303,9 @@ class Room {
     this.lastActivity = Date.now();
     name = (name || '').trim().substring(0, 20);
     if (!name) {
-      this.send(ws, { type: 'error', message: 'Please enter a name.' });
-      return null;
+      let n = this.players.size + 1;
+      while (this.players.has(`Player${n}`)) n++;
+      name = `Player${n}`;
     }
 
     const existing = this.players.get(name);

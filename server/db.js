@@ -144,7 +144,17 @@ function openDatabase(dbPath) {
      * INSERT OR REPLACE a single player row.
      */
     savePlayer(roomId, player) {
-      stmts.insertPlayer.run(playerToRow(roomId, player));
+      const row = playerToRow(roomId, player);
+      const roomExists = db.prepare('SELECT 1 FROM rooms WHERE room_id = ?').get(roomId);
+      if (!roomExists) {
+        console.error('[db] savePlayer FK violation: room_id=%s does not exist in rooms table. player=%s', roomId, player.name);
+      }
+      try {
+        stmts.insertPlayer.run(row);
+      } catch (err) {
+        console.error('[db] savePlayer failed: room_id=%s player=%s row=%j error=%s', roomId, player.name, row, err.message);
+        throw err;
+      }
     },
 
     /**

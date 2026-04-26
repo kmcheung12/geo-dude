@@ -73,8 +73,12 @@
     playerChips: getEl('player-chips'),
     globeWrapper: getEl('globe-wrapper'),
     gamePrompt: getEl('game-prompt'),
-    scoreboard: getEl('scoreboard'),
     answerPanel: getEl('answer-panel'),
+    panelSpectatorWatch: getEl('panel-spectator-watch'),
+    panelProximity: getEl('panel-proximity'),
+    panelSelect: getEl('panel-select'),
+    btnLockPin: getEl('btn-lock-pin'),
+    btnConfirmSelect: getEl('btn-confirm-select'),
     hostGameActions: getEl('host-game-actions'),
     btnEndGame: getEl('btn-end-game'),
     overlayQuestionEnd: getEl('overlay-question-end'),
@@ -109,7 +113,6 @@
     challengeEndGuestWaiting: getEl('challenge-end-guest-waiting'),
     btnNextChallenge: getEl('btn-next-challenge'),
     btnEndChallengeGame: getEl('btn-end-challenge-game'),
-    btnSkipQuestion: getEl('btn-skip-question'),
     btnSkipGuess: getEl('btn-skip-guess'),
   };
 
@@ -283,6 +286,9 @@
         localStorage.setItem('geoName', myName);
         localStorage.setItem('geoRoom', roomId);
         console.log('[Geo] Joined as:', myName);
+        if (els.changeNameInput && !els.changeNameInput.value.trim()) {
+          els.changeNameInput.value = myName;
+        }
         break;
 
       case 'state':
@@ -433,11 +439,7 @@
       connect();
       flushQueue();
       const name = els.landingName ? els.landingName.value.trim() : (myName || '');
-      if (name) {
-        localStorage.setItem('geoName', name);
-        myName = name;
-        send({ type: 'join', name, roomId });
-      }
+      send({ type: 'join', name, roomId });
     } catch (e) {
       console.error('[Geo] Error creating room:', e);
     }
@@ -534,9 +536,6 @@
       els.lobbyPlayerList.appendChild(div);
     }
 
-    if (gameState !== 'LOBBY') {
-      renderScoreboard(players);
-    }
   }
 
   function updateSettingsUI(settings) {
@@ -588,6 +587,7 @@
 
     if (!globe) {
       globe = createGlobe(els.globeWrapper);
+      new ResizeObserver(() => globe && globe.resize()).observe(els.globeWrapper);
       globe.load('/data/countries-110m.json').then(() => {
         globeReady = true;
         setupQuestion(msg);
@@ -611,13 +611,9 @@
 
     if (isSpectator) {
       if (els.gamePrompt) els.gamePrompt.textContent = 'Spectator Mode';
-      const note = document.createElement('p');
-      note.style.color = 'var(--text-muted)';
-      note.textContent = 'You are watching. Next round you can play!';
-      if (els.answerPanel) {
-        els.answerPanel.innerHTML = '';
-        els.answerPanel.appendChild(note);
-      }
+      if (els.answerPanel) els.answerPanel.innerHTML = '';
+      hideAnswerPanels();
+      if (els.panelSpectatorWatch) els.panelSpectatorWatch.classList.remove('hidden');
       if (msg.mode === 'highlight') {
         globe.setZoomable(true);
         globe.setDraggable(false);
@@ -647,6 +643,8 @@
   function renderAnswerButtons(options, target) {
     if (!els.answerPanel) return;
     els.answerPanel.innerHTML = '';
+    hideAnswerPanels();
+    els.answerPanel.classList.remove('hidden');
     for (const opt of options) {
       const btn = document.createElement('button');
       btn.className = 'answer-btn';
@@ -678,6 +676,7 @@
   function renderProximityQuestion(msg) {
     if (!els.answerPanel) return;
     els.answerPanel.innerHTML = '';
+    hideAnswerPanels();
 
     // Assign color indices to other players
     playerColorIndex = {};
@@ -693,29 +692,19 @@
     globe.setMyPinName(myName);
 
     if (isSpectator) {
-      const note = document.createElement('p');
-      note.style.color = 'var(--text-muted)';
-      note.textContent = 'Spectating — you can place a pin but it won\'t be counted.';
-      els.answerPanel.appendChild(note);
+      if (els.panelSpectatorWatch) els.panelSpectatorWatch.classList.remove('hidden');
       return;
     }
 
-    const hint = document.createElement('p');
-    hint.style.color = 'var(--text-muted)';
-    hint.style.fontSize = '0.9rem';
-    hint.textContent = 'Click the globe to place your pin. Then lock it in.';
-    els.answerPanel.appendChild(hint);
-
-    const lockBtn = document.createElement('button');
-    lockBtn.className = 'btn-primary';
-    lockBtn.id = 'btn-lock-pin';
-    lockBtn.textContent = 'Confirm';
-    lockBtn.disabled = true;
-    lockBtn.style.marginTop = '0.5rem';
-    els.answerPanel.appendChild(lockBtn);
+    if (els.panelProximity) els.panelProximity.classList.remove('hidden');
+    const lockBtn = els.btnLockPin;
+    if (lockBtn) {
+      lockBtn.disabled = true;
+      lockBtn.textContent = 'Confirm';
+    }
 
     globe.onPinPlace = (lat, lng) => {
-      lockBtn.disabled = false;
+      if (lockBtn) lockBtn.disabled = false;
       clearTimeout(pinThrottleTimer);
       pinThrottleTimer = setTimeout(() => {
         send({ type: 'placePin', lat, lng });
@@ -723,55 +712,54 @@
     };
 
     const lockTrigger = () => {
-      if (lockBtn.disabled) return;
+      if (!lockBtn || lockBtn.disabled) return;
       lockBtn.disabled = true;
       lockBtn.textContent = 'Locked ✓';
       send({ type: 'lockPin' });
     };
-    lockBtn.addEventListener('click', lockTrigger);
-    lockBtn.addEventListener('touchstart', lockTrigger, { passive: true });
+    if (lockBtn) {
+      lockBtn.onclick = lockTrigger;
+      lockBtn.ontouchstart = lockTrigger;
+    }
+  }
+
+  function hideAnswerPanels() {
+    for (const p of [els.answerPanel, els.panelSpectatorWatch, els.panelProximity, els.panelSelect]) {
+      if (p) p.classList.add('hidden');
+    }
   }
 
   function renderSelectMode(target) {
     if (!els.answerPanel) return;
     els.answerPanel.innerHTML = '';
-    const hint = document.createElement('p');
-    hint.style.color = 'var(--text-muted)';
-    hint.style.fontSize = '0.9rem';
-    hint.textContent = 'Click a country on the globe to select it.';
-    els.answerPanel.appendChild(hint);
+    hideAnswerPanels();
+    if (els.panelSelect) els.panelSelect.classList.remove('hidden');
 
-    const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'btn-primary';
-    confirmBtn.textContent = 'Confirm Selection';
-    confirmBtn.disabled = true;
-    confirmBtn.style.marginTop = '0.5rem';
-    els.answerPanel.appendChild(confirmBtn);
+    const confirmBtn = els.btnConfirmSelect;
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Confirm Selection';
+    }
 
     let selected = null;
 
     globe.onCountryClick = (name) => {
       if (hasAnswered) return;
       selected = name;
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Confirm Selection';
+      if (confirmBtn) confirmBtn.disabled = false;
     };
 
     const confirmTrigger = () => {
       if (!selected || hasAnswered) return;
       hasAnswered = true;
-      confirmBtn.disabled = true;
+      if (confirmBtn) confirmBtn.disabled = true;
       send({ type: 'answer', answer: selected });
     };
 
-    confirmBtn.addEventListener('touchstart', () => {
-      confirmTrigger();
-    }, { passive: true });
-
-    confirmBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      confirmTrigger();
-    });
+    if (confirmBtn) {
+      confirmBtn.ontouchstart = () => confirmTrigger();
+      confirmBtn.onclick = (e) => { e.preventDefault(); confirmTrigger(); };
+    }
   }
 
   function disableAllButtons() {
@@ -823,22 +811,6 @@
   }
 
   // ------------------------------------------------------------------
-  // Scoreboard
-  // ------------------------------------------------------------------
-  function renderScoreboard(players) {
-    if (!els.scoreboard) return;
-    els.scoreboard.innerHTML = '<h4>Scores</h4>';
-    const sorted = players.slice().sort((a, b) => b.score - a.score);
-    for (const p of sorted) {
-      if (!p.connected) continue;
-      const row = document.createElement('div');
-      row.className = 'score-row';
-      row.innerHTML = `<span>${escapeHtml(p.name)}</span><span>${p.score}</span>`;
-      els.scoreboard.appendChild(row);
-    }
-  }
-
-  // ------------------------------------------------------------------
   // Overlays
   // ------------------------------------------------------------------
   function showQuestionEnd(msg) {
@@ -875,7 +847,6 @@
       else if (!isSpectator) sounds.wrong();
     }
     if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.remove('hidden');
-    if (els.btnSkipQuestion) els.btnSkipQuestion.classList.toggle('hidden', !isHost);
     startQeCountdown();
   }
 
@@ -1189,7 +1160,6 @@
     if (els.overlayGuessEnd)    els.overlayGuessEnd.classList.add('hidden');
     if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.add('hidden');
     if (els.geCountdown) els.geCountdown.style.display = '';
-    if (els.btnSkipQuestion) els.btnSkipQuestion.classList.add('hidden');
     if (els.btnSkipGuess) els.btnSkipGuess.classList.add('hidden');
     stopQeCountdown();
   }
@@ -1314,8 +1284,12 @@
     if (els.btnPlayAgain) els.btnPlayAgain.addEventListener('click', () => send({ type: 'playAgain' }));
     if (els.btnNextChallenge)    els.btnNextChallenge.addEventListener('click', () => send({ type: 'startRound' }));
     if (els.btnEndChallengeGame) els.btnEndChallengeGame.addEventListener('click', () => send({ type: 'endGame' }));
-    if (els.btnSkipQuestion) els.btnSkipQuestion.addEventListener('click', () => send({ type: 'skipToNext' }));
-    if (els.btnSkipGuess)    els.btnSkipGuess.addEventListener('click', () => send({ type: 'skipToNext' }));
+    if (els.qeCountdown) {
+      const skipQuestion = () => { if (isHost) send({ type: 'skipToNext' }); };
+      els.qeCountdown.addEventListener('click', skipQuestion);
+      els.qeCountdown.addEventListener('touchstart', skipQuestion, { passive: true });
+    }
+    if (els.btnSkipGuess) els.btnSkipGuess.addEventListener('click', () => send({ type: 'skipToNext' }));
 
     if (els.btnChangeName) {
       els.btnChangeName.addEventListener('click', () => {
