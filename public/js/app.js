@@ -814,6 +814,17 @@
   // Overlays
   // ------------------------------------------------------------------
   function showQuestionEnd(msg) {
+    // Mark answer buttons correct/wrong (highlight mode)
+    if (els.answerPanel) {
+      for (const btn of els.answerPanel.querySelectorAll('.answer-btn')) {
+        if (btn.textContent === msg.correctAnswer) {
+          btn.classList.add('correct');
+        } else if (btn.classList.contains('selected')) {
+          btn.classList.add('wrong');
+        }
+      }
+    }
+
     if (currentMode === 'select') {
       if (els.answerPanel) els.answerPanel.innerHTML = '';
       if (els.gamePrompt) els.gamePrompt.textContent = `Answer: ${msg.correctAnswer}`;
