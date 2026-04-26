@@ -607,6 +607,7 @@ button:disabled {
 .overlay-card h3 {
   font-size: 1.3rem;
   font-weight: 800;
+  margin-bottom: 0.25rem;
 }
 
 .qe-answer {
@@ -765,7 +766,7 @@ button:disabled {
 .rank-pos.silver {
   background: linear-gradient(135deg, #f1f5f9, #cbd5e1);
   color: #334155;
-  box-shadow: 0 0 10px rgba(203, 213, 225, 0.3);
+  box-shadow: 0 0 10px rgba(203, 213, 225, 0.5);
 }
 
 .rank-pos.bronze {
