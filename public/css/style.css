@@ -1,15 +1,15 @@
 :root {
-  --bg: #0f172a;
-  --bg-elevated: #1e293b;
-  --bg-card: #334155;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --accent: #10b981;
+  --bg: #071322;
+  --bg-elevated: #0f2137;
+  --bg-card: #1a3450;
+  --primary: #f97316;
+  --primary-hover: #ea6c0a;
+  --accent: #22d3ee;
   --danger: #ef4444;
-  --warning: #f59e0b;
-  --text: #f1f5f9;
-  --text-muted: #94a3b8;
-  --border: #475569;
+  --warning: #fbbf24;
+  --text: #e8f4fd;
+  --text-muted: #6ea8ca;
+  --border: #1e4068;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -82,7 +82,7 @@ body {
   width: 100%;
   max-width: 400px;
   text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(34, 211, 238, 0.08);
 }
 
 .card h1 {
