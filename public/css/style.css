@@ -398,7 +398,7 @@ button:disabled {
 
 .player-chip.answered {
   border-color: var(--accent);
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(34, 211, 238, 0.15);
 }
 
 .player-chip .chip-check {
@@ -494,7 +494,7 @@ button:disabled {
 
 .answer-btn.selected {
   border-color: var(--accent);
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(34, 211, 238, 0.15);
 }
 
 .answer-btn.locked {
