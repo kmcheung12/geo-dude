@@ -122,21 +122,34 @@ button {
   background: var(--primary);
   color: white;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.1s, filter 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 button:hover { background: var(--primary-hover); }
 
+button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
 .btn-primary {
   background: var(--accent);
-  color: white;
+  color: #071322;
   font-size: 1.1rem;
+  font-weight: 800;
   padding: 0.9rem 1.5rem;
+  border-radius: 12px;
+  letter-spacing: 0.01em;
 }
 
 .btn-primary:hover { filter: brightness(1.1); }
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.92);
+}
 
 .btn-secondary {
   background: var(--bg-card);
@@ -472,10 +485,16 @@ button:disabled {
   width: 100%;
   text-align: left;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  font-weight: 700;
+  border-radius: 10px;
+}
+
+.answer-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .answer-btn:hover {
