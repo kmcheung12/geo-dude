@@ -73,9 +73,9 @@ function createGlobe(container) {
       .attr('cx', width / 2)
       .attr('cy', height / 2)
       .attr('r', currentScale)
-      .attr('fill', '#0b1220')
-      .attr('stroke', '#334155')
-      .attr('stroke-width', 1.5);
+      .attr('fill', '#0c3d6b')
+      .attr('stroke', '#1a6ea8')
+      .attr('stroke-width', 2);
 
     g = svg.append('g')
       .attr('clip-path', 'url(#globe-clip)');
@@ -268,7 +268,7 @@ function createGlobe(container) {
   }
 
   function baseColor(name) {
-    return colorMap[name] || '#1e293b';
+    return colorMap[name] || '#1a3a5c';
   }
 
   function handleClick(event) {
@@ -329,7 +329,7 @@ function createGlobe(container) {
         .attr('class', 'country')
         .attr('d', path)
         .attr('fill', d => baseColor(d.properties.name))
-        .attr('stroke', '#64748b')
+        .attr('stroke', '#1a6ea8')
         .attr('stroke-width', 0.5)
         .on('mouseover', function(event, d) {
           if (draggable) d3.select(this).attr('fill', '#334155');
@@ -360,7 +360,7 @@ function createGlobe(container) {
         })
         .attr('r', r)
         .attr('fill', d => baseColor(d.properties.name))
-        .attr('stroke', '#64748b')
+        .attr('stroke', '#1a6ea8')
         .attr('stroke-width', 1)
         .style('pointer-events', 'none')
         .style('display', d => isPointVisible(d.geometry.coordinates) ? 'block' : 'none')
@@ -388,7 +388,7 @@ function createGlobe(container) {
   function highlightCountry(name) {
     clearHighlight();
     currentHighlight = name;
-    applyStyle(name, '#3b82f6', '#ffffff', 1, 'highlight');
+    applyStyle(name, '#f97316', '#ffffff', 1, 'highlight');
 
     const coords = getFeatureCoords(name);
     if (coords) {
@@ -408,10 +408,10 @@ function createGlobe(container) {
 
   function setSelection(name) {
     if (currentSelection && currentSelection !== name) {
-      applyStyle(currentSelection, baseColor(currentSelection), '#64748b', 0.5, null);
+      applyStyle(currentSelection, baseColor(currentSelection), '#1a6ea8', 0.5, null);
     }
     currentSelection = name;
-    applyStyle(name, '#10b981', '#ffffff', 1, 'selected');
+    applyStyle(name, '#22d3ee', '#ffffff', 1, 'selected');
   }
 
   function applyStyle(name, fill, stroke, strokeWidth, state) {
@@ -437,13 +437,13 @@ function createGlobe(container) {
     currentSelection = null;
     g.selectAll('path.country')
       .attr('fill', d => baseColor(d.properties.name))
-      .attr('stroke', '#64748b')
+      .attr('stroke', '#1a6ea8')
       .attr('stroke-width', 0.5)
       .attr('data-state', null);
 
     g.selectAll('circle.micro-country')
       .attr('fill', d => baseColor(d.properties.name))
-      .attr('stroke', '#64748b')
+      .attr('stroke', '#1a6ea8')
       .attr('stroke-width', 1)
       .attr('data-state', null);
   }
