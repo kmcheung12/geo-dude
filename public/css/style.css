@@ -568,24 +568,27 @@ button:disabled {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(7, 19, 34, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
+  animation: overlay-fade 0.2s ease-out both;
 }
 
 .overlay.hidden { display: none; }
 
 .overlay-card {
   background: var(--bg-elevated);
-  border-radius: 16px;
+  border-radius: 20px;
   padding: 2rem;
   width: 90%;
   max-width: 480px;
   text-align: center;
   max-height: 80vh;
   overflow-y: auto;
+  border: 1px solid var(--border);
+  animation: card-slide-up 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .qe-answer {
@@ -666,6 +669,16 @@ button:disabled {
   60%  { transform: translateX(-4px); }
   80%  { transform: translateX(4px); }
   100% { transform: translateX(0); }
+}
+
+@keyframes overlay-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes card-slide-up {
+  from { transform: translateY(28px) scale(0.95); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 .qe-countdown-text {
