@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+  <canvas id="globe-3d"></canvas>
 
   <!-- Connection Status Bar -->
   <div id="conn-bar" class="conn-bar hidden">
@@ -166,13 +167,9 @@
         <button id="btn-end-game" class="btn-danger">End Game</button>
       </div>
     </div>
-    <div class="game-body">
-      <div class="globe-container">
-        <div id="globe-wrapper"></div>
-        <div id="game-prompt" class="game-prompt"></div>
-      </div>
-      <div class="game-sidebar">
-        <div id="answer-panel" class="answer-panel"></div>
+    <div id="game-prompt" class="game-prompt"></div>
+    <div class="game-sidebar">
+      <div id="answer-panel" class="answer-panel"></div>
         <div id="panel-spectator-watch" class="hidden" style="padding:1rem">
           <p class="text-muted">You are watching. Next round you can play!</p>
         </div>
@@ -184,7 +181,6 @@
           <p class="text-muted" style="font-size:0.9rem">Click a country on the globe to select it.</p>
           <button id="btn-confirm-select" class="btn-primary" style="margin-top:0.5rem" disabled>Confirm Selection</button>
         </div>
-      </div>
     </div>
 
     <!-- Question End Overlay -->
