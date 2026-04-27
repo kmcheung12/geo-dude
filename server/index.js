@@ -1101,17 +1101,6 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 (async () => {
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, '..', 'dist')));
-  }
-
   app.use(express.json());
 
   const rooms = new Map();
@@ -1395,6 +1384,17 @@ function reloadRoomsFromDB() {
 
   console.log(`[Geo] Restored ${restored} room(s) from database`);
 }
+
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(__dirname, '..', 'dist')));
+  }
 
   reloadRoomsFromDB();
 
