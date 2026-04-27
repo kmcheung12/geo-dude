@@ -1,18 +1,10 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
 
 export default defineConfig({
-  publicDir: false,
+  // Static assets (css/, data/) are copied verbatim to dist/
+  publicDir: 'public',
   build: {
-    lib: {
-      entry: resolve(__dirname, 'public/js/src/app.js'),
-      name: 'GeoApp',
-      formats: ['iife'],
-      fileName: () => 'bundle.js',
-    },
-    outDir: 'public/js',
-    emptyOutDir: false,
-    sourcemap: true,
-    target: 'es2020',
+    outDir: 'dist',
+    emptyOutDir: true,
   },
 });
