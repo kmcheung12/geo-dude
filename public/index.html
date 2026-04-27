@@ -35,20 +35,7 @@
   </section>
 
   <!-- Host Waiting Screen -->
-  <section id="screen-host-wait" class="screen">
-    <div class="card">
-      <h2>Room ID: <span id="host-room-id">----</span></h2>
-      <p class="subtitle">Share this link or QR code</p>
-      <div class="qr-section">
-        <img id="host-qr-code" alt="QR Code">
-        <p id="host-room-url" class="room-url"></p>
-      </div>
-      <div id="host-wait-player-list" class="player-list"></div>
-      <button id="btn-start-from-wait" class="btn-primary">Start Round</button>
-    </div>
-  </section>
-
-  <!-- Join Screen -->
+<!-- Join Screen -->
   <section id="screen-join" class="screen">
     <div class="card">
       <h2>Join a Room</h2>
@@ -234,9 +221,11 @@
             <circle class="qe-countdown-bg" cx="50" cy="50" r="45"/>
             <circle class="qe-countdown-ring" cx="50" cy="50" r="45"/>
           </svg>
-          <span class="qe-countdown-text">Next</span>
+          <span class="qe-countdown-text">
+            <span>Next</span>
+            <span>&#8594;</span>
+          </span>
         </div>
-        <button id="btn-skip-guess" class="btn-secondary hidden">Skip →</button>
       </div>
     </div>
 

@@ -35,7 +35,6 @@
 
   const screens = {
     landing: getEl('screen-landing'),
-    hostWait: getEl('screen-host-wait'),
     join: getEl('screen-join'),
     lobby: getEl('screen-lobby'),
     game: getEl('screen-game'),
@@ -45,11 +44,6 @@
     btnStartRoom: getEl('btn-start-room'),
     btnJoinRoom: getEl('btn-join-room'),
     landingName: getEl('landing-name'),
-    hostRoomId: getEl('host-room-id'),
-    hostQrCode: getEl('host-qr-code'),
-    hostRoomUrl: getEl('host-room-url'),
-    hostWaitPlayerList: getEl('host-wait-player-list'),
-    btnStartFromWait: getEl('btn-start-from-wait'),
     joinRoomId: getEl('join-room-id'),
     joinName: getEl('join-name'),
     btnJoin: getEl('btn-join'),
@@ -113,7 +107,6 @@
     challengeEndGuestWaiting: getEl('challenge-end-guest-waiting'),
     btnNextChallenge: getEl('btn-next-challenge'),
     btnEndChallengeGame: getEl('btn-end-challenge-game'),
-    btnSkipGuess: getEl('btn-skip-guess'),
   };
 
   // ------------------------------------------------------------------
@@ -308,10 +301,6 @@
       case 'players':
         renderPlayerList(msg.players);
         updatePlayerChips(msg.players);
-        // Also update host-wait player list if we're on that screen
-        if (screens.hostWait && screens.hostWait.classList.contains('active')) {
-          renderHostWaitPlayerList(msg.players);
-        }
         break;
 
       case 'settings':
@@ -429,12 +418,6 @@
       // Update URL without reloading
       history.replaceState(null, '', `/?room=${roomId}`);
 
-      // Show host wait screen
-      if (els.hostRoomId) els.hostRoomId.textContent = roomId;
-      if (els.hostQrCode) els.hostQrCode.src = data.qr;
-      if (els.hostRoomUrl) els.hostRoomUrl.textContent = data.url;
-      showScreen('hostWait');
-
       // Ensure WS is connected, then join
       connect();
       flushQueue();
@@ -472,24 +455,6 @@
   // ------------------------------------------------------------------
   // Host Waiting Screen
   // ------------------------------------------------------------------
-  function renderHostWaitPlayerList(players) {
-    if (!els.hostWaitPlayerList) return;
-    els.hostWaitPlayerList.innerHTML = '';
-    const connected = players.filter(p => p.connected);
-    if (connected.length === 0) {
-      els.hostWaitPlayerList.innerHTML = '<p class="text-muted">Waiting for players...</p>';
-      return;
-    }
-    for (const p of connected) {
-      const div = document.createElement('div');
-      div.className = 'player-item';
-      let badges = '';
-      if (p.isHost) badges += '<span class="host-badge">HOST</span>';
-      div.innerHTML = `<span>${escapeHtml(p.name)}</span><span>${badges}</span>`;
-      els.hostWaitPlayerList.appendChild(div);
-    }
-  }
-
   // ------------------------------------------------------------------
   // Lobby
   // ------------------------------------------------------------------
@@ -834,13 +799,7 @@
         globe.clearHighlight();
         globe.highlightCountry(msg.correctAnswer);
       }
-      let myCorrect = false;
-      if (msg.playerAnswers && msg.playerAnswers[myName]) {
-        myCorrect = msg.playerAnswers[myName].correct;
-      }
-      if (myCorrect) sounds.correct();
-      else if (!isSpectator) sounds.wrong();
-      return;
+      // fall through to show overlay with player results
     }
 
     if (els.qeAnswer) els.qeAnswer.textContent = `Correct answer: ${msg.correctAnswer}`;
@@ -923,11 +882,9 @@
 
     if (els.overlayGuessEnd) els.overlayGuessEnd.classList.remove('hidden');
     if (!msg.challengeOver) {
-      if (els.btnSkipGuess) els.btnSkipGuess.classList.toggle('hidden', !isHost);
       startGeCountdown();
     } else {
       if (els.geCountdown) els.geCountdown.style.display = 'none';
-      if (els.btnSkipGuess) els.btnSkipGuess.classList.add('hidden');
     }
   }
 
@@ -1172,7 +1129,6 @@
     if (els.overlayGuessEnd)    els.overlayGuessEnd.classList.add('hidden');
     if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.add('hidden');
     if (els.geCountdown) els.geCountdown.style.display = '';
-    if (els.btnSkipGuess) els.btnSkipGuess.classList.add('hidden');
     stopQeCountdown();
   }
 
@@ -1250,13 +1206,6 @@
       roomId = savedRoomId;
     }
 
-    // Host wait screen start button
-    if (els.btnStartFromWait) {
-      els.btnStartFromWait.addEventListener('click', () => {
-        send({ type: 'startRound' });
-      });
-    }
-
     // Settings
     const settingMap = {
       'setting-mode': 'mode',
@@ -1301,7 +1250,11 @@
       els.qeCountdown.addEventListener('click', skipQuestion);
       els.qeCountdown.addEventListener('touchstart', skipQuestion, { passive: true });
     }
-    if (els.btnSkipGuess) els.btnSkipGuess.addEventListener('click', () => send({ type: 'skipToNext' }));
+    if (els.geCountdown) {
+      const skipGuess = () => { if (isHost) send({ type: 'skipToNext' }); };
+      els.geCountdown.addEventListener('click', skipGuess);
+      els.geCountdown.addEventListener('touchstart', skipGuess, { passive: true });
+    }
 
     if (els.btnChangeName) {
       els.btnChangeName.addEventListener('click', () => {
