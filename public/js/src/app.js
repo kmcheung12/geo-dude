@@ -1,3 +1,5 @@
+import { createGlobe } from './globe3d.js';
+
 /**
  * Geo Challenge - Client App
  * Handles WS connection, screen routing, and game orchestration.
@@ -21,6 +23,7 @@
   let hasAnswered = false;
   let globe = null;
   let globeReady = false;
+  let globeLoadPromise = null;
   let answeredPlayers = new Set();
   let pinThrottleTimer = null;
   let playerColorIndex = {};  // name -> index for pin colors
@@ -65,7 +68,6 @@
     gameQuestion: getEl('game-question'),
     gameTimer: getEl('game-timer'),
     playerChips: getEl('player-chips'),
-    globeWrapper: getEl('globe-wrapper'),
     gamePrompt: getEl('game-prompt'),
     answerPanel: getEl('answer-panel'),
     panelSpectatorWatch: getEl('panel-spectator-watch'),
@@ -100,6 +102,8 @@
     geTitle: getEl('ge-title'),
     geTable: getEl('ge-table'),
     geCountdown: getEl('ge-countdown'),
+    guessEndHostActions: getEl('guess-end-host-actions'),
+    btnSkipGuess: getEl('btn-skip-guess'),
     overlayChallengeEnd: getEl('overlay-challenge-end'),
     ceTarget: getEl('ce-target'),
     ceRankings: getEl('ce-rankings'),
@@ -156,6 +160,18 @@
     console.log('[Geo] showScreen:', name);
     Object.values(screens).forEach(s => s && s.classList.remove('active'));
     if (screens[name]) screens[name].classList.add('active');
+
+    if (!globe) return;
+    if (name === 'landing') {
+      globe.transitionTo('landing');
+      if (globeReady) globe.startLobbyDemo(currentMode || 'highlight');
+    } else if (name === 'lobby') {
+      globe.transitionTo('lobby');
+      if (globeReady) globe.startLobbyDemo(currentMode || 'highlight');
+    } else if (name === 'game') {
+      globe.stopLobbyDemo();
+      globe.transitionTo('gameplay');
+    }
   }
 
   // ------------------------------------------------------------------
@@ -547,22 +563,14 @@
     }
     if (els.answerPanel) els.answerPanel.innerHTML = '';
     if (els.gamePrompt) els.gamePrompt.textContent = '';
+    hasAnswered = false;
     answeredPlayers.clear();
     updatePlayerChipsFromSet();
 
-    if (!globe) {
-      globe = createGlobe(els.globeWrapper);
-      new ResizeObserver(() => globe && globe.resize()).observe(els.globeWrapper);
-      globe.load('/data/countries-110m.json').then(() => {
-        globeReady = true;
-        setupQuestion(msg);
-        updateHostGameActions();
-      });
-    } else if (globeReady) {
-      globe.clearHighlight();
-      setupQuestion(msg);
-      updateHostGameActions();
-    }
+    // Render UI immediately (answer buttons, panels)
+    if (globe) globe.clearHighlight();
+    setupQuestion(msg);
+    updateHostGameActions();
   }
 
   function setupQuestion(msg) {
@@ -880,6 +888,9 @@
 
     if (globe && globeReady) globe.archivePins();
 
+    if (els.guessEndHostActions) {
+      els.guessEndHostActions.classList.toggle('hidden', !(isHost && !msg.challengeOver));
+    }
     if (els.overlayGuessEnd) els.overlayGuessEnd.classList.remove('hidden');
     if (!msg.challengeOver) {
       startGeCountdown();
@@ -1219,7 +1230,13 @@
       el.addEventListener('change', (e) => {
         const key = settingMap[e.target.id];
         if (key) onSettingChange(key, e.target.value);
-        if (e.target.id === 'setting-mode') updateSettingsVisibility(e.target.value);
+        if (e.target.id === 'setting-mode') {
+          updateSettingsVisibility(e.target.value);
+          currentMode = e.target.value;
+          if (globeReady && screens.lobby && screens.lobby.classList.contains('active')) {
+            globe.startLobbyDemo(e.target.value);
+          }
+        }
       });
     });
 
@@ -1274,6 +1291,9 @@
       els.geCountdown.addEventListener('click', skipGuess);
       els.geCountdown.addEventListener('touchstart', skipGuess, { passive: true });
     }
+    if (els.btnSkipGuess) {
+      els.btnSkipGuess.addEventListener('click', () => send({ type: 'skipToNext' }));
+    }
 
     if (els.btnChangeName) {
       els.btnChangeName.addEventListener('click', () => {
@@ -1288,6 +1308,23 @@
       els.changeNameInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && els.btnChangeName) els.btnChangeName.click();
       });
+    }
+
+    // Eager globe initialisation
+    try {
+      const globeCanvas = document.getElementById('globe-3d');
+      globe = createGlobe(globeCanvas);
+
+      globeLoadPromise = globe.load('/data/countries-110m.json').then(() => {
+        globeReady = true;
+        globe.startLobbyDemo(currentMode || 'highlight');
+      }).catch(e => {
+        console.error('[Geo] Globe data load failed:', e);
+        globeReady = false;
+      });
+    } catch (e) {
+      console.error('[Geo] Globe init failed:', e);
+      globeLoadPromise = Promise.resolve();
     }
 
     connect();

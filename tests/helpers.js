@@ -63,65 +63,35 @@ async function startProximityGame(page) {
 }
 
 /**
- * Click the center of the globe wrapper.
- * In proximity mode this always places a pin (projection.invert is valid at centre).
+ * Click the center of the 3D globe canvas.
+ * In proximity mode this places a pin wherever the globe surface is at centre.
  */
 async function clickGlobeCenter(page) {
-  const box = await page.locator('#globe-wrapper').boundingBox();
+  const box = await page.locator('#globe-3d').boundingBox();
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
 }
 
 /**
- * Attempt to click a land area on the globe for select mode.
+ * Attempt to click a land area on the 3D globe canvas for select mode.
  *
- * Strategy: find a path.country element whose centre is inside the browser
- * viewport AND has a non-trivial d attribute (front-hemisphere countries have
- * real path data; back-hemisphere ones are clipped to empty strings by D3's
- * clipAngle(90)). Click its centre via page.mouse so we stay in SVG coords.
- *
- * Falls back to probing known-land offsets at default rotation [0, 0].
+ * The 3D globe is centred at (lon 0°, lat 0°) by default. Probes offsets
+ * slightly right-of-centre to hit Central/West Africa (large land mass).
+ * The click handler in globe3d.js uses geoContains to confirm a country hit.
  */
 async function clickCountryOnGlobe(page) {
-  const pos = await page.evaluate(() => {
-    for (const path of document.querySelectorAll('#globe-wrapper svg path.country')) {
-      const d = path.getAttribute('d');
-      if (!d || d.length < 20) continue; // empty = back hemisphere
-
-      const rect = path.getBoundingClientRect();
-      if (rect.width < 10 || rect.height < 10) continue; // degenerate
-
-      const cx = rect.x + rect.width / 2;
-      const cy = rect.y + rect.height / 2;
-      if (cx > 0 && cx < window.innerWidth && cy > 0 && cy < window.innerHeight) {
-        return { x: cx, y: cy };
-      }
-    }
-    return null;
-  });
-
-  if (pos) {
-    await page.mouse.click(pos.x, pos.y);
-    try {
-      await expect(page.locator('#btn-confirm-select')).toBeEnabled({ timeout: 2000 });
-      return;
-    } catch {
-      // path centre was ocean despite heuristics — fall through to probes
-    }
-  }
-
-  // Fallback: probe known-land positions at default rotation [0, 0].
-  // Centre = (lon 0°, lat 0°) — Atlantic. Shifting right hits Central Africa.
-  const box = await page.locator('#globe-wrapper').boundingBox();
+  const box = await page.locator('#globe-3d').boundingBox();
+  // Probe offsets relative to canvas centre — right side hits Africa
   const probeOffsets = [
-    [0.58, 0.42], // ~lon 20°E, lat 5°N — Congo basin
-    [0.52, 0.38], // ~Europe
-    [0.62, 0.50], // East Africa
-    [0.48, 0.46], // West Africa
+    [0.56, 0.42], // ~lon 15°E, lat 8°N — Central Africa (large land mass)
+    [0.52, 0.38], // ~lon 5°E, lat 15°N — West Africa
+    [0.60, 0.50], // ~lon 25°E, lat 0°N — East Africa
+    [0.54, 0.46], // ~lon 10°E, lat 3°N — Congo basin
+    [0.50, 0.35], // ~lon 0°E, lat 20°N — North Africa
   ];
   for (const [rx, ry] of probeOffsets) {
     await page.mouse.click(box.x + box.width * rx, box.y + box.height * ry);
     try {
-      await expect(page.locator('#btn-confirm-select')).toBeEnabled({ timeout: 1000 });
+      await expect(page.locator('#btn-confirm-select')).toBeEnabled({ timeout: 1500 });
       return;
     } catch {
       // miss — try next offset
@@ -130,11 +100,11 @@ async function clickCountryOnGlobe(page) {
 }
 
 /**
- * Simulate a mouse drag on the globe SVG by (dx, dy) pixels from centre.
+ * Simulate a mouse drag on the 3D globe canvas by (dx, dy) pixels from centre.
  */
 async function dragGlobe(page, dx, dy) {
-  const box = await page.locator('#globe-wrapper').boundingBox();
-  const cx = box.x + box.width / 2;
+  const box = await page.locator('#globe-3d').boundingBox();
+  const cx = box.x + box.width  / 2;
   const cy = box.y + box.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
@@ -143,45 +113,26 @@ async function dragGlobe(page, dx, dy) {
 }
 
 /**
- * Return the current r attribute of the globe's ocean circle (a proxy for zoom level).
+ * Return window.__globeState from the page (camera distance, draggable, zoomable).
  */
-async function getOceanRadius(page) {
-  return page.evaluate(() => {
-    const circle = document.querySelector('#globe-wrapper svg circle.ocean');
-    return circle ? parseFloat(circle.getAttribute('r')) : null;
-  });
+async function getGlobeState(page) {
+  return page.evaluate(() => ({
+    cameraDistance: window.__globeState ? window.__globeState.cameraDistance : null,
+    draggable:      window.__globeState ? window.__globeState.draggable      : null,
+    zoomable:       window.__globeState ? window.__globeState.zoomable       : null,
+  }));
 }
 
 /**
- * Return the d attribute of the first front-hemisphere country path.
- * Waits until at least one path has a non-trivial d value (back-hemisphere
- * paths have empty d attributes due to D3's clipAngle(90)).
- */
-async function getFirstCountryPathD(page) {
-  await page.waitForFunction(
-    () => [...document.querySelectorAll('#globe-wrapper svg path.country')]
-      .some(p => (p.getAttribute('d') || '').length > 20),
-    { timeout: 15000 }
-  );
-  return page.evaluate(() => {
-    for (const path of document.querySelectorAll('#globe-wrapper svg path.country')) {
-      const d = path.getAttribute('d');
-      if (d && d.length > 20) return d;
-    }
-    return null;
-  });
-}
-
-/**
- * Wheel-zoom in on the globe from its centre and return { before, after } ocean radii.
+ * Wheel-zoom on the globe canvas and return { before, after } camera distances.
  */
 async function zoomGlobe(page, deltaY = -300) {
-  const box = await page.locator('#globe-wrapper').boundingBox();
+  const box = await page.locator('#globe-3d').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  const before = await getOceanRadius(page);
+  const before = await page.evaluate(() => window.__globeState ? window.__globeState.cameraDistance : null);
   await page.mouse.wheel(0, deltaY);
-  await page.waitForTimeout(150); // allow D3 to redraw
-  const after = await getOceanRadius(page);
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => window.__globeState ? window.__globeState.cameraDistance : null);
   return { before, after };
 }
 
@@ -194,7 +145,6 @@ module.exports = {
   clickGlobeCenter,
   clickCountryOnGlobe,
   dragGlobe,
-  getOceanRadius,
-  getFirstCountryPathD,
   zoomGlobe,
+  getGlobeState,
 };

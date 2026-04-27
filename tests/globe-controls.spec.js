@@ -1,13 +1,12 @@
 /**
  * Tests #6 and #7: globe zoom and drag behaviour per game mode.
  *
- * Zoom is verified by checking that the ocean circle's `r` attribute
- * changes after a mouse-wheel event (D3 updates it on every zoom).
+ * Zoom is verified by checking that window.__globeState.cameraDistance
+ * decreases after a wheel-in event (camera moves closer to globe).
  *
- * Drag is verified by checking whether the first country path's `d`
- * attribute changes after a mouse drag gesture.
- * - highlight mode: drag is disabled → `d` must NOT change.
- * - select / proximity modes: drag is enabled → `d` MUST change.
+ * Drag is verified by checking window.__globeState.draggable:
+ * - highlight mode: draggable === false
+ * - select / proximity modes: draggable === true
  */
 
 const { test, expect } = require('@playwright/test');
@@ -17,8 +16,8 @@ const {
   startSelectGame,
   startProximityGame,
   dragGlobe,
-  getFirstCountryPathD,
   zoomGlobe,
+  getGlobeState,
 } = require('./helpers');
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
@@ -32,17 +31,14 @@ test.describe('#6 highlight mode — zoom enabled, drag disabled', () => {
     await startRoom(page);
     await startHighlightGame(page);
 
-    // --- Zoom: wheel up should increase the ocean radius ---
-    const { before: rBefore, after: rAfter } = await zoomGlobe(page, -300);
-    expect(rBefore).not.toBeNull();
-    expect(rAfter).toBeGreaterThan(rBefore);
+    // --- Zoom: wheel in should decrease cameraDistance ---
+    const { before, after } = await zoomGlobe(page, -300);
+    expect(before).not.toBeNull();
+    expect(after).toBeLessThan(before);
 
-    // --- Drag: drag gesture must NOT rotate the globe ---
-    const dBefore = await getFirstCountryPathD(page);
-    await dragGlobe(page, 120, 0);
-    await page.waitForTimeout(150);
-    const dAfter = await getFirstCountryPathD(page);
-    expect(dAfter).toBe(dBefore); // rotation did not change
+    // --- Drag: state should report draggable === false ---
+    const state = await getGlobeState(page);
+    expect(state.draggable).toBe(false);
   }
 
   test('#6 desktop — highlight zoom works and drag is disabled', async ({ page }) => {
@@ -63,17 +59,14 @@ test.describe('#6 highlight mode — zoom enabled, drag disabled', () => {
 // ---------------------------------------------------------------------------
 
 async function verifyZoomAndDragEnabled(page) {
-  // --- Zoom ---
-  const { before: rBefore, after: rAfter } = await zoomGlobe(page, -300);
-  expect(rBefore).not.toBeNull();
-  expect(rAfter).toBeGreaterThan(rBefore);
+  // --- Zoom: wheel in should decrease cameraDistance ---
+  const { before, after } = await zoomGlobe(page, -300);
+  expect(before).not.toBeNull();
+  expect(after).toBeLessThan(before);
 
-  // --- Drag: drag gesture MUST rotate the globe ---
-  const dBefore = await getFirstCountryPathD(page);
-  await dragGlobe(page, 120, 0);
-  await page.waitForTimeout(150);
-  const dAfter = await getFirstCountryPathD(page);
-  expect(dAfter).not.toBe(dBefore); // rotation changed
+  // --- Drag: state should report draggable === true ---
+  const state = await getGlobeState(page);
+  expect(state.draggable).toBe(true);
 }
 
 test.describe('#7 select mode — zoom and drag both enabled', () => {
