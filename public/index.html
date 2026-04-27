@@ -53,17 +53,8 @@
   <!-- Lobby Screen -->
   <section id="screen-lobby" class="screen">
     <div class="lobby-container">
-      <div class="lobby-left">
-        <h2>Lobby</h2>
-        <div class="name-change">
-          <input type="text" id="change-name-input" placeholder="Your name" maxlength="20" autocomplete="off">
-          <button id="btn-change-name">Change Name</button>
-        </div>
-        <div id="lobby-player-list" class="player-list"></div>
-      </div>
-      <div class="lobby-right">
+      <div class="panel-game-control">
         <div id="host-controls" class="host-controls hidden">
-          <h3>Settings</h3>
           <div class="settings-grid">
   <div class="setting-row">
     <label>Mode</label>
@@ -73,52 +64,44 @@
       <option value="proximity">Guess the country</option>
     </select>
   </div>
-
+</div>
+          <details class="settings-fold">
+            <summary>Customise</summary>
+            <div class="settings-grid">
   <div class="setting-row" id="setting-row-questions">
     <label>Questions per Round</label>
-    <input type="number" id="setting-questions" value="10" min="1" max="50">
+    <div class="stepper">
+      <button type="button" class="stepper-dec">−</button>
+      <input type="number" id="setting-questions" value="10" min="1" max="50">
+      <button type="button" class="stepper-inc">+</button>
+    </div>
   </div>
 
   <div class="setting-row" id="setting-row-listsize">
     <label>List Size</label>
-    <select id="setting-list-size">
-      <option value="3">3</option>
-      <option value="4" selected>4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
-      <option value="7">7</option>
-      <option value="8">8</option>
-      <option value="9">9</option>
-      <option value="10">10</option>
-    </select>
+    <div class="stepper">
+      <button type="button" class="stepper-dec">−</button>
+      <input type="number" id="setting-list-size" value="4" min="3" max="10">
+      <button type="button" class="stepper-inc">+</button>
+    </div>
   </div>
 
   <div class="setting-row" id="setting-row-guesses" style="display:none">
     <label>Guesses per Challenge</label>
-    <select id="setting-guesses">
-      <option value="3">3</option>
-      <option value="4">4</option>
-      <option value="5" selected>5</option>
-      <option value="6">6</option>
-      <option value="7">7</option>
-      <option value="8">8</option>
-      <option value="9">9</option>
-      <option value="10">10</option>
-    </select>
+    <div class="stepper">
+      <button type="button" class="stepper-dec">−</button>
+      <input type="number" id="setting-guesses" value="5" min="3" max="10">
+      <button type="button" class="stepper-inc">+</button>
+    </div>
   </div>
 
   <div class="setting-row" id="setting-row-challenges" style="display:none">
     <label>Challenges per Game</label>
-    <select id="setting-challenges">
-      <option value="3">3</option>
-      <option value="4">4</option>
-      <option value="5" selected>5</option>
-      <option value="6">6</option>
-      <option value="7">7</option>
-      <option value="8">8</option>
-      <option value="9">9</option>
-      <option value="10">10</option>
-    </select>
+    <div class="stepper">
+      <button type="button" class="stepper-dec">−</button>
+      <input type="number" id="setting-challenges" value="5" min="3" max="10">
+      <button type="button" class="stepper-inc">+</button>
+    </div>
   </div>
 
   <div class="setting-row">
@@ -142,16 +125,29 @@
     </select>
   </div>
 </div>
-          <button id="btn-start" class="btn-primary">Start Round</button>
+          </details>
+          <div class="settings-actions">
+            <button id="btn-start" class="btn-primary">Start Round</button>
+          </div>
           <div class="qr-section">
-            <p>Scan to join:</p>
             <img id="lobby-qr-code" alt="QR Code">
-            <p id="lobby-room-url" class="room-url"></p>
+            <div class="qr-meta">
+              <span class="qr-label">Scan to join</span>
+              <p id="lobby-room-url" class="room-url"></p>
+            </div>
           </div>
         </div>
         <div id="guest-waiting" class="guest-waiting">
-          <p>Waiting for host to start the round...</p>
+          <p>Waiting for host<span class="dot-anim"><span>.</span><span>.</span><span>.</span></span></p>
         </div>
+      </div>
+      <div class="panel-players">
+        <h2>Lobby</h2>
+        <div class="name-change">
+          <input type="text" id="change-name-input" placeholder="Your name" maxlength="20" autocomplete="off">
+          <button id="btn-change-name">Change Name</button>
+        </div>
+        <div id="lobby-player-list" class="player-list"></div>
       </div>
     </div>
   </section>

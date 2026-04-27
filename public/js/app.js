@@ -1238,6 +1238,25 @@
       });
     }
 
+    // Stepper controls
+    document.addEventListener('click', (e) => {
+      const dec = e.target.closest('.stepper-dec');
+      const inc = e.target.closest('.stepper-inc');
+      if (!dec && !inc) return;
+      const stepper = (dec || inc).closest('.stepper');
+      if (!stepper) return;
+      const input = stepper.querySelector('input[type="number"]');
+      if (!input) return;
+      const min = input.min !== '' ? Number(input.min) : -Infinity;
+      const max = input.max !== '' ? Number(input.max) : Infinity;
+      const current = Number(input.value);
+      const next = dec ? Math.max(min, current - 1) : Math.min(max, current + 1);
+      if (next !== current) {
+        input.value = next;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
     if (els.btnStart) els.btnStart.addEventListener('click', () => send({ type: 'startRound' }));
     if (els.btnEndGame) els.btnEndGame.addEventListener('click', () => send({ type: 'endGame' }));
     if (els.btnNextRound) els.btnNextRound.addEventListener('click', () => send({ type: 'startRound' }));
