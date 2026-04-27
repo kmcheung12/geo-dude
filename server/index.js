@@ -1100,10 +1100,21 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use(express.json());
+(async () => {
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(__dirname, '..', 'dist')));
+  }
 
-const rooms = new Map();
+  app.use(express.json());
+
+  const rooms = new Map();
 
 app.post('/api/rooms', async (req, res) => {
   let roomId = generateRoomId();
@@ -1385,12 +1396,13 @@ function reloadRoomsFromDB() {
   console.log(`[Geo] Restored ${restored} room(s) from database`);
 }
 
-reloadRoomsFromDB();
+  reloadRoomsFromDB();
 
-server.listen(PORT, () => {
-  console.log(`Geo Challenge server running at http://${detectLocalIP()}:${PORT}`);
-});
+  server.listen(PORT, () => {
+    console.log(`Geo Challenge server running at http://${detectLocalIP()}:${PORT}`);
+  });
 
-if (require.main !== module) {
-  module.exports = { reloadRoomsFromDB, rooms, db };
-}
+  if (require.main !== module) {
+    module.exports = { reloadRoomsFromDB, rooms, db };
+  }
+})();
