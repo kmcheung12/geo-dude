@@ -9,7 +9,7 @@ export function createGlobe(canvas) {
   const scene = new THREE.Scene();
 
   // ── Renderer ─────────────────────────────────────────────────────────────
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 1);
 
@@ -25,7 +25,7 @@ export function createGlobe(canvas) {
   controls.minDistance = 110;
   controls.maxDistance = 500;
   controls.autoRotate = true;
-  controls.autoRotateSpeed = 0.4;
+  controls.autoRotateSpeed = 0.2;
   controls.enabled = false;
 
   // ── Lights ───────────────────────────────────────────────────────────────
@@ -84,9 +84,9 @@ export function createGlobe(canvas) {
   // ── Utility ──────────────────────────────────────────────────────────────
   function latLngToVec3(lat, lng, radius) {
     const phi   = (90 - lat) * Math.PI / 180;
-    const theta = (lng + 180) * Math.PI / 180;
+    const theta = (90 - lng) * Math.PI / 180;
     return new THREE.Vector3(
-      -radius * Math.sin(phi) * Math.cos(theta),
+       radius * Math.sin(phi) * Math.cos(theta),
        radius * Math.cos(phi),
        radius * Math.sin(phi) * Math.sin(theta)
     );
@@ -119,6 +119,8 @@ export function createGlobe(canvas) {
   let countryColors    = {};
   let highlightedCountry = null;
   let selectedCountry    = null;
+  let hoveredCountry     = null;
+  let _screenToLatLng    = null;   // set by api.load once canvas is ready
   let cameraTransition   = null;
   let currentCameraState = 'landing';
   let demoIntervalId     = null;
@@ -131,6 +133,16 @@ export function createGlobe(canvas) {
     get zoomable()           { return controls.enableZoom; },
     get highlightedCountry() { return highlightedCountry; },
     get selectedCountry()    { return selectedCountry; },
+    get hoveredCountry()     { return hoveredCountry; },
+    flyToCountry(name)       { flyToCountry(name); },
+    rotateToLatLng(lat, lng) {
+      globe._rotToken = Symbol();  // cancel any in-flight flyToCountry animation
+      const target = latLngToVec3(lat, lng, 1);
+      const front  = camera.position.clone().normalize();
+      globe.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(target, front));
+      globe.updateMatrixWorld(true);
+    },
+    screenToLatLngAt(cx, cy) { return _screenToLatLng ? _screenToLatLng(cx, cy) : null; },
   };
 
   // ── Resize ────────────────────────────────────────────────────────────────
@@ -192,7 +204,16 @@ export function createGlobe(canvas) {
   }
 
   function refreshPolygonColors() {
-    globe.polygonsData(polygonFeatures.slice());
+    const hl  = highlightedCountry;   // snapshot now
+    console.log('refresh hl=', hl);
+    const sel = selectedCountry;
+    globe.polygonCapColor(f => {
+      const name = f.properties?.name;
+      if (name === hl)  return '#f97316';
+      if (name === sel) return '#22d3ee';
+      return countryColors[name] || '#1a3450';
+    }).polygonsData([...polygonFeatures]);
+    globe.polygonCapColor( f => capColor(f));
   }
 
   // ── flyToCountry ──────────────────────────────────────────────────────────
@@ -200,27 +221,27 @@ export function createGlobe(canvas) {
     const feat = polygonFeatures.find(f => f.properties && f.properties.name === name);
     if (!feat) return;
     const [lng, lat] = geoCentroid(feat);
-    const targetY = -lng * Math.PI / 180;
-    const targetX =  lat * Math.PI / 180;
-    const startY  = globe.rotation.y;
-    const startX  = globe.rotation.x;
-    const t0      = performance.now();
-    const token   = Symbol();
+    const target = latLngToVec3(lat, lng, 1);
+    const front = camera.position.clone().normalize();
+    const targetQ = new THREE.Quaternion().setFromUnitVectors(target, front);
+    const startQ = globe.quaternion.clone();
+    // if (targetQ.dot(startQ) < 0) targetQ.invert();
+    const t0 = performance.now();
+    const token = Symbol();
     globe._rotToken = token;
     (function step() {
       if (globe._rotToken !== token) return;
       const t = Math.min((performance.now() - t0) / 900, 1);
-      const e = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
-      globe.rotation.y = startY + (targetY - startY) * e;
-      globe.rotation.x = startX + (targetX - startX) * e;
+      const e = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+      globe.quaternion.copy(startQ).slerp(targetQ, e);
       if (t < 1) requestAnimationFrame(step);
     })();
   }
 
   // ── Camera state configs ──────────────────────────────────────────────────
   const CAMERA_STATES = {
-    landing:  { distance: 400, autoRotate: true,  autoRotateSpeed: 0.35, gameplay: false },
-    lobby:    { distance: 230, autoRotate: true,  autoRotateSpeed: 0.15, gameplay: false },
+    landing:  { distance: 400, autoRotate: true,  autoRotateSpeed: 0.175, gameplay: false },
+    lobby:    { distance: 230, autoRotate: true,  autoRotateSpeed: 0.075, gameplay: false },
     gameplay: { distance: 145, autoRotate: false, autoRotateSpeed: 0,    gameplay: true  },
   };
 
@@ -304,10 +325,12 @@ export function createGlobe(canvas) {
       // Transform world-space hit into the globe's local frame to account for
       // any rotation applied by flyToCountry (demo or highlight auto-spin).
       const local = globe.worldToLocal(hit.clone());
-      const lat =  90 - Math.acos(local.y  / GLOBE_RADIUS) * 180 / Math.PI;
-      const lng = (Math.atan2(local.z, -local.x) * 180 / Math.PI) - 180;
+      const lat   = 90 - Math.acos(local.y / GLOBE_RADIUS) * 180 / Math.PI;
+      const theta = Math.atan2(local.z, local.x);
+      const lng   = 90 - theta * 180 / Math.PI - (theta < -Math.PI / 2 ? 360 : 0);
       return { lat, lng };
     }
+    _screenToLatLng = screenToLatLng;
 
     function lngLatToFeature(lng, lat) {
       for (const f of polygonFeatures) {
@@ -358,7 +381,6 @@ export function createGlobe(canvas) {
 
     // Hover (desktop only)
     if (window.innerWidth >= 768) {
-      let hoveredCountry = null;
       canvas.addEventListener('mousemove', (event) => {
         const ll = screenToLatLng(event.clientX, event.clientY);
         if (!ll) { hoveredCountry = null; return; }
@@ -368,7 +390,7 @@ export function createGlobe(canvas) {
         hoveredCountry = name;
         globe.polygonAltitude(f => {
           const n = f.properties && f.properties.name;
-          return (n === hoveredCountry && n !== highlightedCountry) ? 0.015 : 0.006;
+          return (n === hoveredCountry && n !== highlightedCountry) ? 0.055 : 0.006;
         });
       });
     }
@@ -397,12 +419,14 @@ export function createGlobe(canvas) {
 
   api.highlightCountry = function(name) {
     highlightedCountry = name;
+    console.log("highlight:", name);
     selectedCountry    = null;
     refreshPolygonColors();
     flyToCountry(name);
   };
 
   api.clearHighlight = function() {
+    console.trace('clearHighlight called');
     highlightedCountry = null;
     selectedCountry    = null;
     refreshPolygonColors();
@@ -467,7 +491,6 @@ export function createGlobe(canvas) {
   api.stopLobbyDemo = function() {
     if (demoIntervalId) { clearInterval(demoIntervalId); demoIntervalId = null; }
     api.clearAllPins();
-    api.clearHighlight();
   };
 
   api.startLobbyDemo = function(mode) {
@@ -475,7 +498,6 @@ export function createGlobe(canvas) {
 
     function step() {
       api.clearAllPins();
-      api.clearHighlight();
       const name = DEMO_COUNTRIES[demoIndex % DEMO_COUNTRIES.length];
       demoIndex++;
 
@@ -499,7 +521,7 @@ export function createGlobe(canvas) {
     }
 
     step();
-    demoIntervalId = setInterval(step, 2800);
+    demoIntervalId = setInterval(step, 5600);
   };
 
   return api;

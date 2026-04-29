@@ -10,6 +10,11 @@
   --text: #e8f4fd;
   --text-muted: #6ea8ca;
   --border: #1e4068;
+
+  /* Layout constants — keep in sync with JS-controlled positioning */
+  --header-h: 56px;
+  --topbar-h: 48px;
+  --sidebar-w: 280px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -251,8 +256,15 @@ button:active:not(:disabled) {
 
 .game-top-area {
   position: fixed;
-  top: 56px; left: 0; right: 0;
+  top: var(--header-h); left: 0; right: 0;
+  height: var(--topbar-h);
   z-index: 19;
+  display: flex;
+  align-items: center;
+  background: rgba(7, 19, 34, 0.80);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
   pointer-events: none;
 }
 
@@ -609,12 +621,18 @@ button:disabled {
 .player-chips {
   display: flex;
   gap: 0.5rem;
-  padding: 0.5rem 1.25rem;
-  background: var(--bg-elevated);
-  border-top: 1px solid var(--border);
+  padding: 0 1.25rem;
+  background: transparent;
+  border-top: none;
   overflow-x: auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
 }
+
+.player-chips::-webkit-scrollbar { display: none; }
 
 .player-chip {
   display: inline-flex;
@@ -649,23 +667,31 @@ button:disabled {
 
 .game-prompt {
   position: fixed;
-  top: 60px;
-  left: 50%;
+  /* Position below the header + chips bar, centred on the visible globe
+     (full-width minus the right sidebar) */
+  top: calc(var(--header-h) + var(--topbar-h) + 12px);
+  left: calc(50% - var(--sidebar-w) / 2);
   transform: translateX(-50%);
   z-index: 21;
-  background: rgba(7, 19, 34, 0.85);
-  padding: 0.6rem 1.2rem;
+  background: rgba(7, 19, 34, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.55rem 1.2rem;
   border-radius: 999px;
-  font-size: 1.1rem;
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  font-size: 1.05rem;
   font-weight: 600;
   pointer-events: none;
+  max-width: calc(100% - var(--sidebar-w) - 2rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .game-sidebar {
   position: fixed;
-  top: 56px; right: 0; bottom: 0;
-  width: 280px;
+  top: var(--header-h); right: 0; bottom: 0;
+  width: var(--sidebar-w);
   background: rgba(7, 19, 34, 0.82);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -1069,21 +1095,19 @@ button:disabled {
   }
 
   .game-top-area {
-    display: flex;
-    align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background: rgba(7, 19, 34, 0.82);
-    border-top: 1px solid var(--border);
+    padding: 0 0.75rem;
+    /* Background/height inherited from base rule — only override padding */
   }
 
   .player-chips {
-    flex: 1;
     padding: 0;
-    background: transparent;
-    border-top: none;
-    overflow-x: auto;
-    flex-wrap: nowrap;
+  }
+
+  /* game-prompt: on mobile there's no sidebar, centre on full width */
+  .game-prompt {
+    left: 50%;
+    max-width: calc(100% - 1.5rem);
   }
 
   .host-game-actions {
@@ -1091,6 +1115,7 @@ button:disabled {
     transform: none;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
   }
   .host-game-actions button {
     padding: 0.35rem 0.7rem;

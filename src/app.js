@@ -19,6 +19,7 @@ import { createGlobe } from './globe3d.js';
   let hasEverConnected = false;
   let hasPreviouslyConnected = false;
   let gameState = 'LOBBY';
+  let currScreen = 'landing'
   let currentMode = 'highlight';
   let hasAnswered = false;
   let globe = null;
@@ -169,9 +170,12 @@ import { createGlobe } from './globe3d.js';
       globe.transitionTo('lobby');
       if (globeReady) globe.startLobbyDemo(currentMode || 'highlight');
     } else if (name === 'game') {
-      globe.stopLobbyDemo();
-      globe.transitionTo('gameplay');
+      if (currScreen ==='lobby') {
+          globe.stopLobbyDemo();
+          globe.transitionTo('gameplay');
+        }
     }
+    currScreen = name;
   }
 
   // ------------------------------------------------------------------
@@ -568,7 +572,6 @@ import { createGlobe } from './globe3d.js';
     updatePlayerChipsFromSet();
 
     // Render UI immediately (answer buttons, panels)
-    if (globe) globe.clearHighlight();
     setupQuestion(msg);
     updateHostGameActions();
   }
@@ -589,7 +592,7 @@ import { createGlobe } from './globe3d.js';
       if (els.panelSpectatorWatch) els.panelSpectatorWatch.classList.remove('hidden');
       if (msg.mode === 'highlight') {
         globe.setZoomable(true);
-        globe.setDraggable(false);
+        globe.setDraggable(true);
         globe.highlightCountry(target);
       } else {
         globe.setZoomable(true);
@@ -601,7 +604,7 @@ import { createGlobe } from './globe3d.js';
 
     if (msg.mode === 'highlight') {
       globe.setZoomable(true);
-      globe.setDraggable(false);
+      globe.setDraggable(true);
       globe.highlightCountry(target);
       if (els.gamePrompt) els.gamePrompt.textContent = 'Which country is highlighted?';
       renderAnswerButtons(msg.options, target);
