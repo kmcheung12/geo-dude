@@ -391,7 +391,16 @@ export function createGlobe(canvas) {
     // degrees-per-pixel: camera FOV spread over canvas height, scaled by zoom distance
     const scale = (camera.fov / canvas.clientHeight) * (camera.position.length() / 100);
     globe._rotToken = Symbol();   // cancel any in-flight flyToCountry
-    setGlobeOrientation(dragStartLat + dy * scale, dragStartLng - dx * scale);
+
+    // Vertical drag → latitude only; horizontal drag → longitude only (2D constraint).
+    // If dragging past a pole, reset the anchor so there is no dead-zone on the way back.
+    const rawLat = dragStartLat + dy * scale;
+    const clampedLat = Math.max(-89.9, Math.min(89.9, rawLat));
+    if (rawLat !== clampedLat) {
+      dragStartLat = clampedLat;
+      dragStartY   = clientY;
+    }
+    setGlobeOrientation(clampedLat, dragStartLng - dx * scale);
   }
   function dragEnd() { isDragging = false; }
 
