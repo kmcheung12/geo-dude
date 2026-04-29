@@ -5,6 +5,44 @@ import { feature } from 'topojson-client';
 import { geoCentroid, geoContains } from 'd3-geo';
 
 export function createGlobe(canvas) {
+  // ── Settings ─────────────────────────────────────────────────────────────
+  // All tunable constants live here. The debug GUI (enabled via #debug in URL)
+  // mutates these values and calls the appropriate rebuild/refresh function.
+  const settings = {
+    globe: {
+      starCount:          2000,
+      starColor:          '#ffffff',
+      starSize:           1.2,
+      cloudRadius:        103,
+      cloudColor:         '#ffffff',
+      cloudOpacity:       0.12,
+      cloudRotationSpeed: 0.00025,
+      birdCountMobile:    4,
+      birdCountDesktop:   9,
+      birdColor:          '#d4eeff',
+    },
+    country: {
+      highlightedCountryColor: '#f97316',
+      selectedCountryColor:    '#22d3ee',
+      fallbackCountryColor:    '#1a3450',
+      defaultAltitude: 0.006,
+      hoverAltitude: 0.055,
+    },
+    pins: {
+      pastPinRadius:           0.3,
+      currentPinRadius:        0.5,
+      pastPinAltitude:         0.01,
+      currentPinAltitude:      0.025,
+      pastPinLabelColor:       '#ffffff',
+      pastPinLabelOpacity:     0.4,   // separate because lil-gui colour pickers don't handle rgba strings
+      currentPinLabelColor:    '#ffffff',
+      pastPinLabelAltitude:    0.015,
+      currentPinLabelAltitude: 0.032,
+      pastPinLabelSize:        0.5,
+      currentPinLabelSize:     0.9,
+    },
+  };
+
   // ── Scene ────────────────────────────────────────────────────────────────
   const scene = new THREE.Scene();
 
@@ -35,51 +73,100 @@ export function createGlobe(canvas) {
   scene.add(sun);
 
   // ── Stars ────────────────────────────────────────────────────────────────
-  const starPositions = [];
-  for (let i = 0; i < 2000; i++) {
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.acos(2 * Math.random() - 1);
-    const r     = 800 + Math.random() * 200;
-    starPositions.push(
-      r * Math.sin(phi) * Math.cos(theta),
-      r * Math.sin(phi) * Math.sin(theta),
-      r * Math.cos(phi)
-    );
+  // buildStars() disposes the previous Points mesh (geometry + material) before
+  // creating a new one, preventing GPU memory leaks on repeated GUI rebuilds.
+  // Stars already use a single BufferGeometry for all points — no per-star objects.
+  let starsMesh = null;
+  function buildStars() {
+    if (starsMesh) {
+      scene.remove(starsMesh);
+      starsMesh.geometry.dispose();
+      starsMesh.material.dispose();
+    }
+    const positions = [];
+    for (let i = 0; i < settings.globe.starCount; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const r     = 800 + Math.random() * 200;
+      positions.push(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.sin(phi) * Math.sin(theta),
+        r * Math.cos(phi)
+      );
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    starsMesh = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: settings.globe.starColor,
+      size:  settings.globe.starSize,
+    }));
+    scene.add(starsMesh);
   }
-  const starGeo = new THREE.BufferGeometry();
-  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
-  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.2 })));
+  buildStars();
 
   // ── Globe (three-globe) ──────────────────────────────────────────────────
   const globe = new ThreeGlobe()
     .showAtmosphere(true)
     .atmosphereColor('#22d3ee')
-    .atmosphereAltitude(0.15);
+    .atmosphereAltitude(0.35);
   scene.add(globe);
 
-  // ── Decorative holders ────────────────────────────────────────────────────
-  let clouds = null;
-  const birds  = [];
-  const planes = [];
-
   // ── Clouds ────────────────────────────────────────────────────────────────
-  clouds = new THREE.Mesh(
-    new THREE.SphereGeometry(103, 48, 48),
-    new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, depthWrite: false })
-  );
-  scene.add(clouds);
+  // buildClouds() is needed for radius changes (new SphereGeometry). Colour and
+  // opacity can be updated directly on the material without rebuilding.
+  let clouds = null;
+  function buildClouds() {
+    if (clouds) {
+      scene.remove(clouds);
+      clouds.geometry.dispose();
+      clouds.material.dispose();
+    }
+    clouds = new THREE.Mesh(
+      new THREE.SphereGeometry(settings.globe.cloudRadius, 48, 48),
+      new THREE.MeshPhongMaterial({
+        color:       settings.globe.cloudColor,
+        transparent: true,
+        opacity:     settings.globe.cloudOpacity,
+        depthWrite:  false,
+      })
+    );
+    scene.add(clouds);
+  }
+  buildClouds();
 
   // ── Birds ────────────────────────────────────────────────────────────────
-  const BIRD_COUNT = window.innerWidth < 768 ? 4 : 9;
-  for (let i = 0; i < BIRD_COUNT; i++) {
-    const mesh = new THREE.Mesh(
-      new THREE.ConeGeometry(0.7, 1.8, 4),
-      new THREE.MeshBasicMaterial({ color: 0xd4eeff, transparent: true, opacity: 0.55 })
-    );
-    const axis = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-    birds.push({ mesh, axis, angle: Math.random() * Math.PI * 2, speed: 0.004 + Math.random() * 0.003 });
-    scene.add(mesh);
+  // All bird meshes share one ConeGeometry and one MeshBasicMaterial.
+  // buildBirds() mutates the birds[] array in-place so the animate() closure
+  // always references the live contents without needing a reference swap.
+  // Colour changes only need birdMat.color.set() — no rebuild required.
+  // Count changes (mobile/desktop) require a full rebuild via buildBirds().
+  const birds = [];
+  let birdGeo = null;
+  let birdMat = null;
+
+  function buildBirds() {
+    birds.forEach(b => scene.remove(b.mesh));
+    birds.length = 0;
+    if (birdGeo) { birdGeo.dispose(); birdGeo = null; }
+    if (birdMat) { birdMat.dispose(); birdMat = null; }
+
+    const count = window.innerWidth < 768
+      ? settings.globe.birdCountMobile
+      : settings.globe.birdCountDesktop;
+    birdGeo = new THREE.ConeGeometry(0.7, 1.8, 4);
+    birdMat = new THREE.MeshBasicMaterial({
+      color:       settings.globe.birdColor,
+      transparent: true,
+      opacity:     0.55,
+    });
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(birdGeo, birdMat);
+      const axis = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+      birds.push({ mesh, axis, angle: Math.random() * Math.PI * 2, speed: 0.004 + Math.random() * 0.003 });
+      scene.add(mesh);
+    }
   }
+  buildBirds();
 
   // ── Utility ──────────────────────────────────────────────────────────────
   function latLngToVec3(lat, lng, radius) {
@@ -92,26 +179,22 @@ export function createGlobe(canvas) {
     );
   }
 
-  // ── Airplanes (desktop only) ──────────────────────────────────────────────
-  if (window.innerWidth >= 768) {
-    [
-      { from: [-74.0, 40.7], to: [2.35,  48.85] },
-      { from: [139.7, 35.7], to: [-87.6, 41.8]  },
-      { from: [-43.2,-22.9], to: [18.4, -33.9]  },
-    ].forEach(({ from, to }) => {
-      const origin = latLngToVec3(from[1], from[0], 100);
-      const dest   = latLngToVec3(to[1],   to[0],   100);
-      const mid    = origin.clone().add(dest).multiplyScalar(0.5).setLength(130);
-      const curve  = new THREE.CatmullRomCurve3(
-        new THREE.QuadraticBezierCurve3(origin, mid, dest).getPoints(60)
-      );
-      const mesh = new THREE.Mesh(
-        new THREE.ConeGeometry(0.55, 1.6, 4),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.65 })
-      );
-      planes.push({ mesh, curve, t: Math.random() });
-      scene.add(mesh);
-    });
+  // Set globe orientation to show (lat, lng) at the canvas centre, north always up.
+  // Lat is clamped to [-89.9, 89.9] to prevent flipping past the poles.
+  function setGlobeOrientation(lat, lng) {
+    viewLat = Math.max(-89.9, Math.min(89.9, lat));
+    viewLng = ((lng + 180) % 360 + 360) % 360 - 180;  // normalise to [-180, 180]
+    globe.quaternion.setFromEuler(
+      new THREE.Euler(viewLat * Math.PI / 180, -viewLng * Math.PI / 180, 0, 'YXZ')
+    );
+  }
+
+  // Convert a 6-digit hex colour string to an rgba() string.
+  function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -122,6 +205,9 @@ export function createGlobe(canvas) {
   let hoveredCountry     = null;
   let _screenToLatLng    = null;   // set by api.load once canvas is ready
   let cameraTransition   = null;
+  let viewLat         = 0;    // latitude  of the globe point facing the camera
+  let viewLng         = 0;    // longitude of the globe point facing the camera
+  let draggingEnabled = false;
   let currentCameraState = 'landing';
   let demoIntervalId     = null;
   let demoIndex          = 0;
@@ -129,17 +215,19 @@ export function createGlobe(canvas) {
   // ── Test hook ─────────────────────────────────────────────────────────────
   window.__globeState = {
     get cameraDistance()     { return camera.position.length(); },
-    get draggable()          { return controls.enableRotate; },
+    get draggable()          { return draggingEnabled; },
     get zoomable()           { return controls.enableZoom; },
     get highlightedCountry() { return highlightedCountry; },
     get selectedCountry()    { return selectedCountry; },
     get hoveredCountry()     { return hoveredCountry; },
+    get cameraTransitioning(){ return cameraTransition !== null; },
     flyToCountry(name)       { flyToCountry(name); },
     rotateToLatLng(lat, lng) {
-      globe._rotToken = Symbol();  // cancel any in-flight flyToCountry animation
-      const target = latLngToVec3(lat, lng, 1);
-      const front  = camera.position.clone().normalize();
-      globe.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(target, front));
+      globe._rotToken = Symbol();
+      cameraTransition = null;
+      controls.enabled = false;
+      camera.position.set(0, 0, CAMERA_STATES.gameplay.distance);
+      setGlobeOrientation(lat, lng);
       globe.updateMatrixWorld(true);
     },
     screenToLatLngAt(cx, cy) { return _screenToLatLng ? _screenToLatLng(cx, cy) : null; },
@@ -161,10 +249,16 @@ export function createGlobe(canvas) {
     requestAnimationFrame(animate);
 
     if (cameraTransition) {
-      const { startDist, targetDist, startTime, duration, cfg, onDone } = cameraTransition;
+      const { startDist, targetDist, startDir, targetDir, startTime, duration, cfg, onDone } = cameraTransition;
       const t    = Math.min((performance.now() - startTime) / duration, 1);
       const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
-      camera.position.setLength(startDist + (targetDist - startDist) * ease);
+      const dist = startDist + (targetDist - startDist) * ease;
+      if (targetDir) {
+        // Ease camera direction toward targetDir (gameplay: +Z) while changing distance
+        camera.position.copy(startDir.clone().lerp(targetDir, ease).normalize()).multiplyScalar(dist);
+      } else {
+        camera.position.setLength(dist);
+      }
       if (t >= 1) {
         camera.position.setLength(targetDist);
         cameraTransition = null;
@@ -172,21 +266,13 @@ export function createGlobe(canvas) {
       }
     }
 
-    if (clouds) clouds.rotation.y += 0.00025;
+    if (clouds) clouds.rotation.y += settings.globe.cloudRotationSpeed;
 
     birds.forEach(b => {
       b.angle += b.speed;
       const pos = new THREE.Vector3(107, 0, 0).applyAxisAngle(b.axis, b.angle);
       b.mesh.position.copy(pos);
       b.mesh.lookAt(new THREE.Vector3(107, 0, 0).applyAxisAngle(b.axis, b.angle + 0.02));
-    });
-
-    planes.forEach(p => {
-      p.t = (p.t + 0.0008) % 1;
-      const pos     = p.curve.getPoint(p.t);
-      const tangent = p.curve.getTangent(p.t);
-      p.mesh.position.copy(pos);
-      p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent.normalize());
     });
 
     controls.update();
@@ -198,22 +284,14 @@ export function createGlobe(canvas) {
   // ── Country colour function ───────────────────────────────────────────────
   function capColor(feat) {
     const name = feat.properties && feat.properties.name;
-    if (name === highlightedCountry) return '#f97316';
-    if (name === selectedCountry)    return '#22d3ee';
-    return countryColors[name] || '#1a3450';
+    if (name === highlightedCountry) return settings.country.highlightedCountryColor;
+    if (name === selectedCountry)    return settings.country.selectedCountryColor;
+    return countryColors[name] || settings.country.fallbackCountryColor;
   }
 
   function refreshPolygonColors() {
-    const hl  = highlightedCountry;   // snapshot now
-    console.log('refresh hl=', hl);
-    const sel = selectedCountry;
-    globe.polygonCapColor(f => {
-      const name = f.properties?.name;
-      if (name === hl)  return '#f97316';
-      if (name === sel) return '#22d3ee';
-      return countryColors[name] || '#1a3450';
-    }).polygonsData([...polygonFeatures]);
-    globe.polygonCapColor( f => capColor(f));
+    console.log('refresh hl=', highlightedCountry);
+    globe.polygonCapColor(f => capColor(f)).polygonsData([...polygonFeatures]);
   }
 
   // ── flyToCountry ──────────────────────────────────────────────────────────
@@ -221,11 +299,11 @@ export function createGlobe(canvas) {
     const feat = polygonFeatures.find(f => f.properties && f.properties.name === name);
     if (!feat) return;
     const [lng, lat] = geoCentroid(feat);
-    const target = latLngToVec3(lat, lng, 1);
-    const front = camera.position.clone().normalize();
-    const targetQ = new THREE.Quaternion().setFromUnitVectors(target, front);
-    const startQ = globe.quaternion.clone();
-    // if (targetQ.dot(startQ) < 0) targetQ.invert();
+    const startLat = viewLat, startLng = viewLng;
+    // Take the short way around the longitude circle
+    let dLng = lng - startLng;
+    if (dLng > 180) dLng -= 360;
+    if (dLng < -180) dLng += 360;
     const t0 = performance.now();
     const token = Symbol();
     globe._rotToken = token;
@@ -233,7 +311,7 @@ export function createGlobe(canvas) {
       if (globe._rotToken !== token) return;
       const t = Math.min((performance.now() - t0) / 900, 1);
       const e = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
-      globe.quaternion.copy(startQ).slerp(targetQ, e);
+      setGlobeOrientation(startLat + (lat - startLat) * e, startLng + dLng * e);
       if (t < 1) requestAnimationFrame(step);
     })();
   }
@@ -254,17 +332,19 @@ export function createGlobe(canvas) {
     .pointsData([])
     .pointLat(d => d.lat).pointLng(d => d.lng)
     .pointColor(d => d.color)
-    .pointRadius(d => d.past ? 0.3 : 0.5)
-    .pointAltitude(d => d.past ? 0.01 : 0.025)
+    .pointRadius(d => d.past ? settings.pins.pastPinRadius : settings.pins.currentPinRadius)
+    .pointAltitude(d => d.past ? settings.pins.pastPinAltitude : settings.pins.currentPinAltitude)
     .pointsMerge(false);
 
   globe
     .labelsData([])
     .labelLat(d => d.lat).labelLng(d => d.lng)
     .labelText(d => d.label)
-    .labelColor(d => d.past ? 'rgba(255,255,255,0.4)' : '#ffffff')
-    .labelSize(d => d.past ? 0.5 : 0.9)
-    .labelAltitude(d => d.past ? 0.015 : 0.032)
+    .labelColor(d => d.past
+      ? hexToRgba(settings.pins.pastPinLabelColor, settings.pins.pastPinLabelOpacity)
+      : settings.pins.currentPinLabelColor)
+    .labelSize(d => d.past ? settings.pins.pastPinLabelSize : settings.pins.currentPinLabelSize)
+    .labelAltitude(d => d.past ? settings.pins.pastPinLabelAltitude : settings.pins.currentPinLabelAltitude)
     .labelResolution(2);
 
   function flushPins() {
@@ -291,6 +371,41 @@ export function createGlobe(canvas) {
     'Germany','Kenya','Mexico','Egypt','Indonesia','Norway','South Africa',
   ];
 
+  // ── Globe drag (constrained to lat/lng, no roll, no past-pole) ───────────
+  controls.enableRotate = false;   // OrbitControls handles zoom only
+  let isDragging    = false;
+  let touchDragMoved = false;      // true when a touch drag has moved > threshold
+  let dragStartX = 0, dragStartY = 0, dragStartLat = 0, dragStartLng = 0;
+
+  function dragStart(clientX, clientY) {
+    isDragging = true;
+    touchDragMoved = false;
+    dragStartX = clientX; dragStartY = clientY;
+    dragStartLat = viewLat; dragStartLng = viewLng;
+  }
+  function dragMove(clientX, clientY) {
+    if (!isDragging || !draggingEnabled) return;
+    const dx = clientX - dragStartX;
+    const dy = clientY - dragStartY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) touchDragMoved = true;
+    // degrees-per-pixel: camera FOV spread over canvas height, scaled by zoom distance
+    const scale = (camera.fov / canvas.clientHeight) * (camera.position.length() / 100);
+    globe._rotToken = Symbol();   // cancel any in-flight flyToCountry
+    setGlobeOrientation(dragStartLat + dy * scale, dragStartLng - dx * scale);
+  }
+  function dragEnd() { isDragging = false; }
+
+  canvas.addEventListener('mousedown',  e => { if (draggingEnabled) dragStart(e.clientX, e.clientY); });
+  canvas.addEventListener('mousemove',  e => dragMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup',    dragEnd);
+  canvas.addEventListener('touchstart', e => {
+    if (draggingEnabled && e.touches.length === 1) dragStart(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  canvas.addEventListener('touchmove',  e => {
+    if (e.touches.length === 1) dragMove(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  canvas.addEventListener('touchend', dragEnd, { passive: true });
+
   // ── Public API ────────────────────────────────────────────────────────────
   const api = { onCountryClick: null, onPinPlace: null };
 
@@ -307,7 +422,7 @@ export function createGlobe(canvas) {
       .polygonCapColor(capColor)
       .polygonSideColor(() => 'rgba(15, 33, 55, 0.6)')
       .polygonStrokeColor(() => '#1e4068')
-      .polygonAltitude(0.006);
+      .polygonAltitude(settings.country.defaultAltitude);
 
     // ── Click / hover detection via Three.js Raycaster ────────────────────
     const raycaster = new THREE.Raycaster();
@@ -365,6 +480,7 @@ export function createGlobe(canvas) {
     // Touch support
     canvas.addEventListener('touchend', (event) => {
       if (event.changedTouches.length !== 1) return;
+      if (touchDragMoved) return;   // suppress tap after a drag
       const t = event.changedTouches[0];
       const ll = screenToLatLng(t.clientX, t.clientY);
       if (!ll) return;
@@ -390,7 +506,7 @@ export function createGlobe(canvas) {
         hoveredCountry = name;
         globe.polygonAltitude(f => {
           const n = f.properties && f.properties.name;
-          return (n === hoveredCountry && n !== highlightedCountry) ? 0.055 : 0.006;
+          return (n === hoveredCountry && n !== highlightedCountry) ? settings.country.hoverAltitude: settings.country.defaultAltitude;
         });
       });
     }
@@ -414,7 +530,15 @@ export function createGlobe(canvas) {
       if (onDone) onDone();
       return;
     }
-    cameraTransition = { startDist, targetDist, startTime: performance.now(), duration: 1200, cfg, onDone };
+    // For gameplay, reset globe to default orientation and cancel any fly animations
+    // so the Euler drag system is aligned and country clicks are predictable.
+    if (cfg.gameplay) {
+      globe._rotToken = Symbol();
+      setGlobeOrientation(0, 0);
+    }
+    const startDir  = camera.position.clone().normalize();
+    const targetDir = cfg.gameplay ? new THREE.Vector3(0, 0, 1) : null;
+    cameraTransition = { startDist, targetDist, startDir, targetDir, startTime: performance.now(), duration: 1200, cfg, onDone };
   };
 
   api.highlightCountry = function(name) {
@@ -438,8 +562,7 @@ export function createGlobe(canvas) {
   };
 
   api.setDraggable = function(enabled) {
-    // Only affects rotate; zoom and master enabled are managed by transitionTo
-    controls.enableRotate = enabled;
+    draggingEnabled = enabled;
   };
 
   api.setZoomable = function(enabled) {
@@ -523,6 +646,77 @@ export function createGlobe(canvas) {
     step();
     demoIntervalId = setInterval(step, 5600);
   };
+
+  // ── Debug GUI (enabled via #debug in URL hash) ────────────────────────────
+  if (window.location.hash.includes('debug')) {
+    import('lil-gui').then(({ GUI }) => {
+      const gui = new GUI({ title: 'Globe Debug' });
+
+      // ── Globe ─────────────────────────────────────────────────────────────
+      const globeF = gui.addFolder('Globe');
+      // starCount requires a full rebuild (new BufferGeometry + randomised positions)
+      globeF.add(settings.globe, 'starCount', 100, 5000, 1).name('Star Count')
+        .onFinishChange(buildStars);
+      // starColor/starSize can update the live material without a rebuild
+      globeF.addColor(settings.globe, 'starColor').name('Star Color')
+        .onChange(() => { if (starsMesh) starsMesh.material.color.set(settings.globe.starColor); });
+      globeF.add(settings.globe, 'starSize', 0.1, 5).name('Star Size')
+        .onChange(() => { if (starsMesh) starsMesh.material.size = settings.globe.starSize; });
+      // cloudRadius requires new SphereGeometry; colour/opacity update the material live
+      globeF.add(settings.globe, 'cloudRadius', 100, 115, 0.5).name('Cloud Radius')
+        .onFinishChange(buildClouds);
+      globeF.addColor(settings.globe, 'cloudColor').name('Cloud Color')
+        .onChange(() => { if (clouds) clouds.material.color.set(settings.globe.cloudColor); });
+      globeF.add(settings.globe, 'cloudOpacity', 0, 1).name('Cloud Opacity')
+        .onChange(() => { if (clouds) clouds.material.opacity = settings.globe.cloudOpacity; });
+      globeF.add(settings.globe, 'cloudRotationSpeed', 0, 0.002).name('Cloud Rotation Speed');
+      // birdCount changes require a rebuild; birdColor updates the shared material live
+      globeF.add(settings.globe, 'birdCountMobile', 0, 20, 1).name('Bird Count (Mobile)')
+        .onFinishChange(buildBirds);
+      globeF.add(settings.globe, 'birdCountDesktop', 0, 30, 1).name('Bird Count (Desktop)')
+        .onFinishChange(buildBirds);
+      globeF.addColor(settings.globe, 'birdColor').name('Bird Color')
+        .onChange(() => { if (birdMat) birdMat.color.set(settings.globe.birdColor); });
+
+      // ── Country ───────────────────────────────────────────────────────────
+      const countryF = gui.addFolder('Country');
+      countryF.addColor(settings.country, 'highlightedCountryColor').name('Highlighted')
+        .onChange(refreshPolygonColors);
+      countryF.addColor(settings.country, 'selectedCountryColor').name('Selected')
+        .onChange(refreshPolygonColors);
+      countryF.addColor(settings.country, 'fallbackCountryColor').name('Fallback')
+        .onChange(refreshPolygonColors);
+      countryF.add(settings.country, 'defaultAltitude', 0.001, 0.1, 0.001)
+        .onChange(refreshPolygonColors);
+      countryF.add(settings.country, 'hoverAltitude', 0.01, 0.1, 0.01)
+        .onChange(refreshPolygonColors);
+
+      // ── Pins ──────────────────────────────────────────────────────────────
+      const pinF = gui.addFolder('Pins');
+      pinF.add(settings.pins, 'pastPinRadius', 0.1, 1).name('Past Pin Radius')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'currentPinRadius', 0.1, 1).name('Current Pin Radius')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'pastPinAltitude', 0, 0.1).name('Past Pin Altitude')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'currentPinAltitude', 0, 0.1).name('Current Pin Altitude')
+        .onChange(flushPins);
+      pinF.addColor(settings.pins, 'pastPinLabelColor').name('Past Label Color')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'pastPinLabelOpacity', 0, 1).name('Past Label Opacity')
+        .onChange(flushPins);
+      pinF.addColor(settings.pins, 'currentPinLabelColor').name('Current Label Color')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'pastPinLabelAltitude', 0, 0.1).name('Past Label Altitude')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'currentPinLabelAltitude', 0, 0.1).name('Current Label Altitude')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'pastPinLabelSize', 0.1, 2).name('Past Label Size')
+        .onChange(flushPins);
+      pinF.add(settings.pins, 'currentPinLabelSize', 0.1, 2).name('Current Label Size')
+        .onChange(flushPins);
+    });
+  }
 
   return api;
 }

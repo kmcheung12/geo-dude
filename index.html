@@ -154,18 +154,14 @@
   <!-- Game Screen -->
   <section id="screen-game" class="screen">
     <div class="game-header">
-      <div class="game-info">
-        <span id="game-round">Round 1</span>
+      <div class="game-header-top">
         <span id="game-question">Question 1/10</span>
+        <div id="game-timer" class="timer">30</div>
+        <div id="host-game-actions" class="host-game-actions hidden">
+          <button id="btn-end-game" class="btn-danger">End Game</button>
+        </div>
       </div>
-      <div id="game-timer" class="timer">30</div>
-    </div>
-    <div class="game-top-area">
       <div id="player-chips" class="player-chips"></div>
-      <!-- Host End Game button -->
-      <div id="host-game-actions" class="host-game-actions hidden">
-        <button id="btn-end-game" class="btn-danger">End Game</button>
-      </div>
     </div>
     <div id="game-prompt" class="game-prompt"></div>
     <div class="game-sidebar">

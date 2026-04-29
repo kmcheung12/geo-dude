@@ -89,7 +89,6 @@ body {
 .screen.active .lobby-container,
 .screen.active .game-header,
 .screen.active .game-sidebar,
-.screen.active .game-top-area,
 .screen.active #game-prompt,
 .screen.active .overlay {
   pointer-events: auto;
@@ -254,27 +253,14 @@ button:active:not(:disabled) {
   color: var(--text-muted);
 }
 
-.game-top-area {
-  position: fixed;
-  top: var(--header-h); left: 0; right: 0;
-  height: var(--topbar-h);
-  z-index: 19;
-  display: flex;
-  align-items: center;
-  background: rgba(7, 19, 34, 0.80);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  pointer-events: none;
+.host-game-actions {
+  flex-shrink: 0;
 }
 
-.game-top-area > * { pointer-events: auto; }
-
-.host-game-actions {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  z-index: 40;
+.host-game-actions button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .error {
@@ -595,17 +581,19 @@ button:disabled {
   top: 0; left: 0; right: 0;
   z-index: 20;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.25rem;
+  flex-direction: column;
   background: rgba(7, 19, 34, 0.82);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
 }
 
-.game-info {
+.game-header-top {
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  height: var(--header-h);
   font-weight: 600;
 }
 
@@ -623,11 +611,11 @@ button:disabled {
   gap: 0.5rem;
   padding: 0 1.25rem;
   background: transparent;
-  border-top: none;
+  border-top: 1px solid var(--border);
   overflow-x: auto;
   flex-wrap: nowrap;
   align-items: center;
-  flex: 1;
+  height: var(--topbar-h);
   min-width: 0;
   scrollbar-width: none;
 }
@@ -690,7 +678,7 @@ button:disabled {
 
 .game-sidebar {
   position: fixed;
-  top: var(--header-h); right: 0; bottom: 0;
+  top: calc(var(--header-h) + var(--topbar-h)); right: 0; bottom: 0;
   width: var(--sidebar-w);
   background: rgba(7, 19, 34, 0.82);
   backdrop-filter: blur(14px);
@@ -1094,14 +1082,12 @@ button:disabled {
     border-radius: 16px 16px 0 0;
   }
 
-  .game-top-area {
-    gap: 0.5rem;
+  .game-header-top {
     padding: 0 0.75rem;
-    /* Background/height inherited from base rule — only override padding */
   }
 
   .player-chips {
-    padding: 0;
+    padding: 0 0.75rem;
   }
 
   /* game-prompt: on mobile there's no sidebar, centre on full width */
@@ -1110,18 +1096,6 @@ button:disabled {
     max-width: calc(100% - 1.5rem);
   }
 
-  .host-game-actions {
-    position: static;
-    transform: none;
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-  .host-game-actions button {
-    padding: 0.35rem 0.7rem;
-    font-size: 0.85rem;
-    white-space: nowrap;
-  }
   .answer-panel {
     display: grid;
     grid-template-columns: 1fr 1fr;

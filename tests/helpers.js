@@ -48,6 +48,11 @@ async function startSelectGame(page) {
   await page.locator('#btn-start').click();
   await expect(page.locator('#screen-game')).toBeVisible({ timeout: TIMEOUT });
   await expect(page.locator('#panel-select')).toBeVisible({ timeout: TIMEOUT });
+  // Wait for the camera transition to finish so clicks land in the right place.
+  await page.waitForFunction(
+    () => window.__globeState && !window.__globeState.cameraTransitioning,
+    { timeout: TIMEOUT }
+  );
 }
 
 /**
@@ -60,6 +65,11 @@ async function startProximityGame(page) {
   await page.locator('#btn-start').click();
   await expect(page.locator('#screen-game')).toBeVisible({ timeout: TIMEOUT });
   await expect(page.locator('#panel-proximity')).toBeVisible({ timeout: TIMEOUT });
+  // Wait for the camera transition to finish so interactions are accurate.
+  await page.waitForFunction(
+    () => window.__globeState && !window.__globeState.cameraTransitioning,
+    { timeout: TIMEOUT }
+  );
 }
 
 /**

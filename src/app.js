@@ -65,7 +65,6 @@ import { createGlobe } from './globe3d.js';
     settingTimer: getEl('setting-timer'),
     settingListSize: getEl('setting-list-size'),
     settingPool: getEl('setting-pool'),
-    gameRound: getEl('game-round'),
     gameQuestion: getEl('game-question'),
     gameTimer: getEl('game-timer'),
     playerChips: getEl('player-chips'),
@@ -559,7 +558,6 @@ import { createGlobe } from './globe3d.js';
   }
 
   function renderQuestion(msg) {
-    if (els.gameRound) els.gameRound.textContent = `Round ${msg.round}`;
     if (els.gameQuestion) els.gameQuestion.textContent = `Question ${msg.index + 1}/${msg.totalQuestions}`;
     if (els.gameTimer) {
       els.gameTimer.textContent = msg.timeLimit > 0 ? (msg.timeRemaining ?? msg.timeLimit) : '∞';
@@ -592,7 +590,7 @@ import { createGlobe } from './globe3d.js';
       if (els.panelSpectatorWatch) els.panelSpectatorWatch.classList.remove('hidden');
       if (msg.mode === 'highlight') {
         globe.setZoomable(true);
-        globe.setDraggable(true);
+        globe.setDraggable(false);
         globe.highlightCountry(target);
       } else {
         globe.setZoomable(true);
@@ -604,7 +602,7 @@ import { createGlobe } from './globe3d.js';
 
     if (msg.mode === 'highlight') {
       globe.setZoomable(true);
-      globe.setDraggable(true);
+      globe.setDraggable(false);
       globe.highlightCountry(target);
       if (els.gamePrompt) els.gamePrompt.textContent = 'Which country is highlighted?';
       renderAnswerButtons(msg.options, target);

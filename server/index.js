@@ -716,6 +716,7 @@ class Room {
       }
     }
 
+    // add .fill(questionPool[4]) to hardcode question for debugging
     const targets = shuffle(questionPool).slice(0, count);
     for (const target of targets) {
       let options = [];
