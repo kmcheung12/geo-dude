@@ -290,7 +290,6 @@ export function createGlobe(canvas) {
   }
 
   function refreshPolygonColors() {
-    console.log('refresh hl=', highlightedCountry);
     globe.polygonCapColor(f => capColor(f)).polygonsData([...polygonFeatures]);
   }
 
@@ -319,8 +318,8 @@ export function createGlobe(canvas) {
   // ── Camera state configs ──────────────────────────────────────────────────
   const CAMERA_STATES = {
     landing:  { distance: 400, autoRotate: true,  autoRotateSpeed: 0.175, gameplay: false },
-    lobby:    { distance: 230, autoRotate: true,  autoRotateSpeed: 0.075, gameplay: false },
-    gameplay: { distance: 145, autoRotate: false, autoRotateSpeed: 0,    gameplay: true  },
+    lobby:    { distance: 250, autoRotate: true,  autoRotateSpeed: 0.075, gameplay: false },
+    gameplay: { distance: 225, autoRotate: false, autoRotateSpeed: 0,    gameplay: true  },
   };
 
   // ── Pin system ───────────────────────────────────────────────────────────
@@ -543,7 +542,7 @@ export function createGlobe(canvas) {
     // so the Euler drag system is aligned and country clicks are predictable.
     if (cfg.gameplay) {
       globe._rotToken = Symbol();
-      setGlobeOrientation(0, 0);
+      // setGlobeOrientation(0, 0);
     }
     const startDir  = camera.position.clone().normalize();
     const targetDir = cfg.gameplay ? new THREE.Vector3(0, 0, 1) : null;
@@ -551,8 +550,8 @@ export function createGlobe(canvas) {
   };
 
   api.highlightCountry = function(name) {
+    console.trace('highlightCountry called', name);
     highlightedCountry = name;
-    console.log("highlight:", name);
     selectedCountry    = null;
     refreshPolygonColors();
     flyToCountry(name);
@@ -623,6 +622,7 @@ export function createGlobe(canvas) {
   api.stopLobbyDemo = function() {
     if (demoIntervalId) { clearInterval(demoIntervalId); demoIntervalId = null; }
     api.clearAllPins();
+    api.clearHighlight();
   };
 
   api.startLobbyDemo = function(mode) {
