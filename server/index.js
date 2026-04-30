@@ -292,7 +292,6 @@ class Room {
       connected[0].isHost = true;
       this.broadcast({ type: 'hostAssigned', hostName: connected[0].name });
       this.broadcastPlayerList();
-      this.broadcastState();
       this.startHostPing();
     } else {
       this.stopHostPing();
@@ -535,7 +534,6 @@ class Room {
       mode: 'proximity',
       timeLimit: this.settings.timerPerGuess,
     });
-    this.broadcastState();
 
     if (this.settings.timerPerGuess > 0) {
       this.questionTimer = setTimeout(() => this.endProximityGuess(), this.settings.timerPerGuess * 1000);
@@ -686,7 +684,6 @@ class Room {
       rankings,
       isLastChallenge,
     });
-    if (!isLastChallenge) this.broadcastState();
 
     if (isLastChallenge) {
       setTimeout(() => this.endGameInternal(), 0);
@@ -756,7 +753,6 @@ class Room {
       timeLimit: this.settings.timerPerGuess,
     };
     this.broadcast(payload);
-    this.broadcastState();
 
     if (this.settings.timerPerGuess > 0) {
       this.questionTimer = setTimeout(() => {
@@ -860,7 +856,6 @@ class Room {
       round: this.currentRound,
       rankings,
     });
-    this.broadcastState();
   }
 
   endGameInternal() {
@@ -873,7 +868,6 @@ class Room {
       .map(p => ({ name: p.name, totalScore: p.totalScore }))
       .sort((a, b) => b.totalScore - a.totalScore);
     this.broadcast({ type: 'gameEnd', finalRankings });
-    this.broadcastState();
     // Schedule room cleanup from db after 5 minutes
     const roomId = this.roomId;
     this.gameEndCleanupTimer = setTimeout(() => {
@@ -906,7 +900,6 @@ class Room {
     db.saveRoom(this);
     db.savePlayers(this);
     this.broadcast({ type: 'lobbyReset' });
-    this.broadcastState();
     this.broadcastPlayerList();
   }
 
@@ -1030,24 +1023,6 @@ class Room {
   broadcast(msg) {
     for (const ws of this.sockets.keys()) {
       this.send(ws, msg);
-    }
-  }
-
-  sendState(ws) {
-    const player = this.getPlayerByWs(ws);
-    this.send(ws, {
-      type: 'state',
-      gameState: this.state,
-      settings: this.settings,
-      me: player ? { name: player.name, isHost: player.isHost, spectator: player.spectator } : null,
-      currentRound: this.currentRound,
-      currentQuestionIndex: this.currentQuestionIndex,
-    });
-  }
-
-  broadcastState() {
-    for (const ws of this.sockets.keys()) {
-      this.sendState(ws);
     }
   }
 

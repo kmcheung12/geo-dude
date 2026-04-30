@@ -250,7 +250,7 @@ import { createGlobe } from './globe3d.js';
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
-        console.log('[Geo] WS msg:', msg.type, msg);
+        //console.log('[Geo] WS msg:', msg.type, msg);
         handleMessage(msg);
       } catch (e) {
         console.error('[Geo] Invalid WS message', e, evt.data);
@@ -303,20 +303,6 @@ import { createGlobe } from './globe3d.js';
         }
         break;
 
-      case 'state':
-        gameState = msg.gameState;
-        isHost = msg.me && msg.me.isHost;
-        isSpectator = msg.me && msg.me.spectator;
-        updateSettingsUI(msg.settings);
-        if (gameState === 'LOBBY') {
-          showScreen('lobby');
-          updateLobbyVisibility();
-        } else if (['PRE_ROUND', 'QUESTION', 'QUESTION_END', 'ROUND_END', 'GAME_END'].includes(gameState)) {
-          showScreen('game');
-        }
-        updateHostGameActions();
-        break;
-
       case 'players':
         renderPlayerList(msg.players);
         updatePlayerChips(msg.players);
@@ -339,6 +325,7 @@ import { createGlobe } from './globe3d.js';
         break;
 
       case 'question':
+        showScreen('game');
         hideOverlays();
         hasAnswered = false;
         answeredPlayers.clear();
@@ -525,7 +512,7 @@ import { createGlobe } from './globe3d.js';
   function updateSettingsUI(settings) {
     if (els.settingMode) els.settingMode.value = settings.mode || 'highlight';
     if (els.settingQuestions) els.settingQuestions.value = settings.questionsPerRound || 10;
-    if (els.settingTimer) els.settingTimer.value = String(settings.timerPerGuess ?? 30);
+    if (els.settingTimer) els.settingTimer.value = String(settings.timerPerGuess ?? 0);
     if (els.settingListSize) els.settingListSize.value = String(settings.listSize ?? 4);
     if (els.settingPool) els.settingPool.value = settings.optionPool || 'random';
     updateSettingsVisibility(settings.mode || 'highlight');
@@ -677,7 +664,7 @@ import { createGlobe } from './globe3d.js';
       lockBtn.disabled = true;
       lockBtn.textContent = 'Confirm';
     }
-
+    globe.onCountryClick = null;
     globe.onPinPlace = (lat, lng) => {
       if (lockBtn) lockBtn.disabled = false;
       clearTimeout(pinThrottleTimer);
@@ -713,11 +700,12 @@ import { createGlobe } from './globe3d.js';
     const confirmBtn = els.btnConfirmSelect;
     if (confirmBtn) {
       confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Confirm Selection';
+      confirmBtn.textContent = 'Confirm';
     }
 
     let selected = null;
-
+    
+    globe.onPinPlace = null;
     globe.onCountryClick = (name) => {
       if (hasAnswered) return;
       selected = name;
