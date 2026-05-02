@@ -1,5 +1,5 @@
-const { test, expect, devices } = require('@playwright/test');
-const {
+import { test, expect, devices } from '@playwright/test';
+import {
   startRoom,
   joinRoom,
   startHighlightGame,
@@ -7,7 +7,7 @@ const {
   startProximityGame,
   clickGlobeCenter,
   clickCountryOnGlobe,
-} = require('./helpers');
+} from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Test #1 — Start all 3 game modes after changing name

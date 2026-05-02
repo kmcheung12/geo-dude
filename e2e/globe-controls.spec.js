@@ -9,8 +9,8 @@
  * - select / proximity modes: draggable === true
  */
 
-const { test, expect } = require('@playwright/test');
-const {
+import { test, expect } from '@playwright/test';
+import {
   startRoom,
   startHighlightGame,
   startSelectGame,
@@ -18,7 +18,7 @@ const {
   dragGlobe,
   zoomGlobe,
   getGlobeState,
-} = require('./helpers');
+} from './helpers.js';
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 

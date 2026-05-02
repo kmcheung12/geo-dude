@@ -2,7 +2,7 @@
  * Test spectator join and promotion after round end.
  */
 
-const WebSocket = require('ws');
+import WebSocket from 'ws';
 const BASE = 'ws://localhost:3000';
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }

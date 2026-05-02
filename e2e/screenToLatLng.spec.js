@@ -14,8 +14,8 @@
  *   5. Assert lat ≈ 1.35 and lng ≈ 103.0 (within ±1°).
  */
 
-const { test, expect } = require('@playwright/test');
-const { startRoom, startSelectGame } = require('./helpers');
+import { test, expect } from '@playwright/test';
+import { startRoom, startSelectGame } from './helpers.js';
 
 const SINGAPORE_LAT = 1.35;   // 1°21′00″N
 const SINGAPORE_LNG = 103.0;  // 103°00′00″E

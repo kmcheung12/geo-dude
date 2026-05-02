@@ -3,3 +3,7 @@ node_modules/
 *.swp
 test-results/
 dist/
+data/
+data/*.db
+data/*.db-shm
+data/*.db-wal

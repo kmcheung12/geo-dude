@@ -3,18 +3,21 @@
  * HTTP + WebSocket server with multi-room management and game engine.
  */
 
-const express = require('express');
-const { createServer } = require('http');
-const { WebSocketServer } = require('ws');
-const QRCode = require('qrcode');
-const os = require('os');
-const fs = require('fs');
-const path = require('path');
-const topojson = require('topojson-client');
+import express from 'express';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import QRCode from 'qrcode';
+import os from 'os';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import * as topojson from 'topojson-client';
 // geoContains used in endProximityGuess (Task 6); geoCentroid used here for centroid precomputation
-const { geoContains, geoCentroid } = require('d3-geo');
-const { openDatabase } = require('./db');
-const db = openDatabase(path.join(__dirname, 'geo-challenge.db'));
+import { geoContains, geoCentroid } from 'd3-geo';
+import { openDatabase } from './db.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const db = openDatabase(path.join(__dirname, '..', 'data', 'geo-challenge.db'));
 
 // ------------------------------------------------------------------
 // Config & Network Detection
@@ -1378,7 +1381,4 @@ function reloadRoomsFromDB() {
     console.log(`Geo Challenge server running at http://${detectLocalIP()}:${PORT}`);
   });
 
-  if (require.main !== module) {
-    module.exports = { reloadRoomsFromDB, rooms, db };
-  }
 })();

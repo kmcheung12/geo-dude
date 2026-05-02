@@ -7,27 +7,29 @@
     "dev": "node server/index.js",
     "start": "NODE_ENV=production node server/index.js",
     "build": "vite build",
-    "preview": "npm run build && npm start"
+    "preview": "npm run build && npm start",
+    "test": "node --test tests/*.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "engines": { "node": ">=20" },
+  "type": "module",
   "dependencies": {
     "better-sqlite3": "^12.9.0",
-    "countries-list": "^3.3.0",
     "d3-geo": "^2.0.0",
     "express": "^5.2.1",
-    "lil-gui": "^0.21.0",
     "qrcode": "^1.5.4",
-    "three": "^0.184.0",
-    "three-globe": "^2.45.2",
     "topojson-client": "^3.1.0",
-    "world-atlas": "^2.0.2",
     "ws": "^8.20.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
-    "vite": "^8.0.10"
+    "countries-list": "^3.3.0",
+    "lil-gui": "^0.21.0",
+    "three": "^0.184.0",
+    "three-globe": "^2.45.2",
+    "vite": "^8.0.10",
+    "world-atlas": "^2.0.2"
   }
 }

@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * server/db.js — SQLite persistence for geo-challenge rooms and players.
  *
@@ -19,7 +17,7 @@
  * once, and returns a thin wrapper object that closes over those statements.
  */
 
-const Database = require('better-sqlite3');
+import Database from 'better-sqlite3';
 
 /**
  * Open (or create) the SQLite database at dbPath.
@@ -207,4 +205,4 @@ function playerToRow(roomId, player) {
   };
 }
 
-module.exports = { openDatabase };
+export { openDatabase };

@@ -1,4 +1,4 @@
-const { expect } = require('@playwright/test');
+import { expect } from '@playwright/test';
 
 const TIMEOUT = 15000;
 
@@ -146,7 +146,7 @@ async function zoomGlobe(page, deltaY = -300) {
   return { before, after };
 }
 
-module.exports = {
+export {
   startRoom,
   joinRoom,
   startHighlightGame,

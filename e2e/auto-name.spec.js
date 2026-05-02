@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
 test('empty name auto-assigns PlayerN and can start a round', async ({ page }) => {
   await page.goto('/');
