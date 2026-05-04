@@ -1,4 +1,5 @@
 import { createGlobe } from './globe3d.js';
+import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/constants.js';
 
 /**
  * Geo Challenge - Client App
@@ -18,8 +19,8 @@ import { createGlobe } from './globe3d.js';
   let isConnected = false;
   let hasEverConnected = false;
   let hasPreviouslyConnected = false;
-  let gameState = 'LOBBY';
-  let currScreen = 'landing'
+  let gameState = GameState.LOBBY;
+  let currScreen = Screen.LANDING
   let currentMode = 'highlight';
   let hasAnswered = false;
   let globe = null;
@@ -162,14 +163,16 @@ import { createGlobe } from './globe3d.js';
     if (screens[name]) screens[name].classList.add('active');
 
     if (!globe) return;
-    if (name === 'landing') {
+    if (name === Screen.LANDING) {
       globe.transitionTo('landing');
       if (globeReady) globe.startLobbyDemo(currentMode || 'highlight');
-    } else if (name === 'lobby') {
-      globe.transitionTo('lobby');
+    } else if (name === Screen.LOBBY) {
+      if (currScreen !== Screen.LOBBY) {
+          globe.transitionTo('lobby');
+      }
       if (globeReady) globe.startLobbyDemo(currentMode || 'highlight');
-    } else if (name === 'game') {
-      if (currScreen ==='lobby') {
+    } else if (name === Screen.GAME) {
+      if (currScreen === Screen.LOBBY) {
           globe.stopLobbyDemo();
           globe.transitionTo('gameplay');
         }
@@ -242,7 +245,7 @@ import { createGlobe } from './globe3d.js';
       setJoinStatus('Connected');
       setConnected(true);
       if (roomId && hasPreviouslyConnected && myName) {
-        send({ type: 'join', name: myName, roomId });
+        send({ type: ClientMessage.JOIN, name: myName, roomId });
       }
       flushQueue();
     };
@@ -250,7 +253,7 @@ import { createGlobe } from './globe3d.js';
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
-        //console.log('[Geo] WS msg:', msg.type, msg);
+        console.log('[Geo] WS msg:', msg.type, msg);
         handleMessage(msg);
       } catch (e) {
         console.error('[Geo] Invalid WS message', e, evt.data);
@@ -293,7 +296,9 @@ import { createGlobe } from './globe3d.js';
   // ------------------------------------------------------------------
   function handleMessage(msg) {
     switch (msg.type) {
-      case 'joined':
+      case ServerMessage.JOINED:
+        showScreen(Screen.LOBBY);
+        updateLobbyVisibility();
         myName = msg.name;
         localStorage.setItem('geoName', myName);
         localStorage.setItem('geoRoom', roomId);
@@ -303,16 +308,16 @@ import { createGlobe } from './globe3d.js';
         }
         break;
 
-      case 'players':
+      case ServerMessage.PLAYERS:
         renderPlayerList(msg.players);
         updatePlayerChips(msg.players);
         break;
 
-      case 'settings':
+      case ServerMessage.SETTINGS:
         updateSettingsUI(msg.settings);
         break;
 
-      case 'hostAssigned':
+      case ServerMessage.HOST_ASSIGNED:
         if (msg.hostName === myName) {
           isHost = true;
           updateLobbyVisibility();
@@ -320,12 +325,12 @@ import { createGlobe } from './globe3d.js';
         }
         break;
 
-      case 'roundStart':
+      case ServerMessage.ROUND_START:
         if (globe && globeReady) globe.clearAllPins();
         break;
 
-      case 'question':
-        showScreen('game');
+      case ServerMessage.QUESTION:
+        showScreen(Screen.GAME);
         hideOverlays();
         hasAnswered = false;
         answeredPlayers.clear();
@@ -333,73 +338,73 @@ import { createGlobe } from './globe3d.js';
         renderQuestion(msg);
         break;
 
-      case 'tick':
+      case ServerMessage.TICK:
         updateTimer(msg.remaining);
         if (msg.remaining > 0 && msg.remaining <= 5) {
           sounds.countdown(msg.remaining);
         }
         break;
 
-      case 'questionEnd':
+      case ServerMessage.QUESTION_END:
         showQuestionEnd(msg);
         break;
 
-      case 'roundEnd':
+      case ServerMessage.ROUND_END:
         showRoundEnd(msg);
         break;
 
-      case 'gameEnd':
+      case ServerMessage.GAME_END:
         showGameEnd(msg);
         break;
 
-      case 'lobbyReset':
+      case ServerMessage.LOBBY_RESET:
         hideOverlays();
         if (globe && globeReady) globe.clearAllPins();
-        showScreen('lobby');
+        showScreen(Screen.LOBBY);
         updateLobbyVisibility();
         break;
 
-      case 'playerAnswered':
+      case ServerMessage.PLAYER_ANSWERED:
         answeredPlayers.add(msg.name);
         updatePlayerChipsFromSet();
         break;
 
-      case 'pinUpdate': {
+      case ServerMessage.PIN_UPDATE: {
         if (globe && globeReady) {
           const colorIdx = playerColorIndex[msg.name] ?? 0;
           globe.updateOtherPin(msg.name, msg.lng, msg.lat, colorIdx);
         }
         break;
       }
-      case 'pinLocked': {
+      case ServerMessage.PIN_LOCKED: {
         if (globe && globeReady) globe.lockPinMarker(msg.name);
         answeredPlayers.add(msg.name);
         updatePlayerChipsFromSet();
         break;
       }
-      case 'guessEnd':
+      case ServerMessage.GUESS_END:
         showGuessEnd(msg);
         break;
-      case 'challengeEnd':
+      case ServerMessage.CHALLENGE_END:
         showChallengeEnd(msg);
         break;
 
-      case 'restore':
+      case ServerMessage.RESTORE:
         applyRestore(msg);
         break;
 
-      case 'ping':
-        send({ type: 'pong' });
+      case ServerMessage.PING:
+        send({ type: ClientMessage.PONG });
         break;
 
-      case 'roomClosed':
+      case ServerMessage.ROOM_CLOSED:
         console.log('[Geo] Room closed:', msg.reason);
         localStorage.removeItem('geoRoom');
-        showScreen('landing');
+        showScreen(Screen.LANDING);
         if (els.joinError) els.joinError.textContent = msg.reason || 'Room has ended. Please rejoin.';
         break;
 
-      case 'error':
+      case ServerMessage.ERROR:
         console.error('[Geo] Server error:', msg.message);
         if (els.joinError) els.joinError.textContent = msg.message;
         break;
@@ -428,7 +433,7 @@ import { createGlobe } from './globe3d.js';
       connect();
       flushQueue();
       const name = els.landingName ? els.landingName.value.trim() : (myName || '');
-      send({ type: 'join', name, roomId });
+      send({ type: ClientMessage.JOIN, name, roomId });
     } catch (e) {
       console.error('[Geo] Error creating room:', e);
     }
@@ -455,7 +460,7 @@ import { createGlobe } from './globe3d.js';
     roomId = id;
     localStorage.setItem('geoName', name);
     myName = name;
-    send({ type: 'join', name, roomId });
+    send({ type: ClientMessage.JOIN, name, roomId });
   }
 
   // ------------------------------------------------------------------
@@ -521,7 +526,7 @@ import { createGlobe } from './globe3d.js';
   }
 
   function onSettingChange(setting, value) {
-    send({ type: 'updateSettings', setting, value });
+    send({ type: ClientMessage.UPDATE_SETTINGS, setting, value });
   }
 
   function updateSettingsVisibility(mode) {
@@ -537,7 +542,7 @@ import { createGlobe } from './globe3d.js';
   // ------------------------------------------------------------------
   function updateHostGameActions() {
     if (!els.hostGameActions) return;
-    if (!isHost || gameState === 'LOBBY') {
+    if (!isHost || gameState === GameState.LOBBY) {
       els.hostGameActions.classList.add('hidden');
     } else {
       els.hostGameActions.classList.remove('hidden');
@@ -619,7 +624,7 @@ import { createGlobe } from './globe3d.js';
         hasAnswered = true;
         btn.classList.add('selected');
         disableAllButtons();
-        send({ type: 'answer', answer: opt });
+        send({ type: ClientMessage.ANSWER, answer: opt });
       };
 
       btn.addEventListener('touchstart', () => {
@@ -669,7 +674,7 @@ import { createGlobe } from './globe3d.js';
       if (lockBtn) lockBtn.disabled = false;
       clearTimeout(pinThrottleTimer);
       pinThrottleTimer = setTimeout(() => {
-        send({ type: 'placePin', lat, lng });
+        send({ type: ClientMessage.PLACE_PIN, lat, lng });
       }, 300);
     };
 
@@ -677,7 +682,7 @@ import { createGlobe } from './globe3d.js';
       if (!lockBtn || lockBtn.disabled) return;
       lockBtn.disabled = true;
       lockBtn.textContent = 'Locked ✓';
-      send({ type: 'lockPin' });
+      send({ type: ClientMessage.LOCK_PIN });
     };
     if (lockBtn) {
       lockBtn.onclick = lockTrigger;
@@ -716,7 +721,7 @@ import { createGlobe } from './globe3d.js';
       if (!selected || hasAnswered) return;
       hasAnswered = true;
       if (confirmBtn) confirmBtn.disabled = true;
-      send({ type: 'answer', answer: selected });
+      send({ type: ClientMessage.ANSWER, answer: selected });
     };
 
     if (confirmBtn) {
@@ -1010,16 +1015,16 @@ import { createGlobe } from './globe3d.js';
     updateHostGameActions();
 
     // 3. Show correct screen
-    if (msg.gameState === 'LOBBY') {
-      showScreen('lobby');
+    if (msg.gameState === GameState.LOBBY) {
+      showScreen(Screen.LOBBY);
       updateLobbyVisibility();
       return;
     }
-    showScreen('game');
+    showScreen(Screen.GAME);
 
     // 4. Render per-state
     switch (msg.gameState) {
-      case 'QUESTION': {
+      case GameState.QUESTION: {
         hideOverlays();
         renderQuestion(msg.question);
         // For proximity mode: replay other players' pins once globe is ready
@@ -1060,7 +1065,7 @@ import { createGlobe } from './globe3d.js';
         break;
       }
 
-      case 'QUESTION_END': {
+      case GameState.QUESTION_END: {
         hideOverlays();
         renderQuestion(msg.question);
         if (msg.lastGuessEnd !== null) {
@@ -1102,7 +1107,7 @@ import { createGlobe } from './globe3d.js';
         break;
       }
 
-      case 'ROUND_END': {
+      case GameState.ROUND_END: {
         hideOverlays();
         if (msg.lastChallengeEnd !== null) {
           showChallengeEnd(msg.lastChallengeEnd);
@@ -1112,7 +1117,7 @@ import { createGlobe } from './globe3d.js';
         break;
       }
 
-      case 'GAME_END': {
+      case GameState.GAME_END: {
         showGameEnd(msg.lastGameEnd);
         break;
       }
@@ -1159,12 +1164,12 @@ import { createGlobe } from './globe3d.js';
         if (els.landingName && els.joinName) {
           els.joinName.value = els.landingName.value.trim();
         }
-        showScreen('join');
+        showScreen(Screen.JOIN);
       });
     }
     if (els.btnBackToLanding) {
       els.btnBackToLanding.addEventListener('click', () => {
-        showScreen('landing');
+        showScreen(Screen.LANDING);
       });
     }
 
@@ -1263,25 +1268,25 @@ import { createGlobe } from './globe3d.js';
       }
     });
 
-    if (els.btnStart) els.btnStart.addEventListener('click', () => send({ type: 'startRound' }));
-    if (els.btnEndGame) els.btnEndGame.addEventListener('click', () => send({ type: 'endGame' }));
-    if (els.btnNextRound) els.btnNextRound.addEventListener('click', () => send({ type: 'startRound' }));
-    if (els.btnReturnLobby) els.btnReturnLobby.addEventListener('click', () => send({ type: 'returnToLobby' }));
-    if (els.btnPlayAgain) els.btnPlayAgain.addEventListener('click', () => send({ type: 'playAgain' }));
-    if (els.btnNextChallenge)    els.btnNextChallenge.addEventListener('click', () => send({ type: 'startRound' }));
-    if (els.btnEndChallengeGame) els.btnEndChallengeGame.addEventListener('click', () => send({ type: 'endGame' }));
+    if (els.btnStart) els.btnStart.addEventListener('click', () => send({ type: ClientMessage.START_ROUND }));
+    if (els.btnEndGame) els.btnEndGame.addEventListener('click', () => send({ type: ClientMessage.END_GAME }));
+    if (els.btnNextRound) els.btnNextRound.addEventListener('click', () => send({ type: ClientMessage.START_ROUND }));
+    if (els.btnReturnLobby) els.btnReturnLobby.addEventListener('click', () => send({ type: ClientMessage.RETURN_TO_LOBBY }));
+    if (els.btnPlayAgain) els.btnPlayAgain.addEventListener('click', () => send({ type: ClientMessage.PLAY_AGAIN }));
+    if (els.btnNextChallenge)    els.btnNextChallenge.addEventListener('click', () => send({ type: ClientMessage.START_ROUND }));
+    if (els.btnEndChallengeGame) els.btnEndChallengeGame.addEventListener('click', () => send({ type: ClientMessage.END_GAME }));
     if (els.qeCountdown) {
-      const skipQuestion = () => { if (isHost) send({ type: 'skipToNext' }); };
+      const skipQuestion = () => { if (isHost) send({ type: ClientMessage.SKIP_TO_NEXT }); };
       els.qeCountdown.addEventListener('click', skipQuestion);
       els.qeCountdown.addEventListener('touchstart', skipQuestion, { passive: true });
     }
     if (els.geCountdown) {
-      const skipGuess = () => { if (isHost) send({ type: 'skipToNext' }); };
+      const skipGuess = () => { if (isHost) send({ type: ClientMessage.SKIP_TO_NEXT }); };
       els.geCountdown.addEventListener('click', skipGuess);
       els.geCountdown.addEventListener('touchstart', skipGuess, { passive: true });
     }
     if (els.btnSkipGuess) {
-      els.btnSkipGuess.addEventListener('click', () => send({ type: 'skipToNext' }));
+      els.btnSkipGuess.addEventListener('click', () => send({ type: ClientMessage.SKIP_TO_NEXT }));
     }
 
     if (els.btnChangeName) {
@@ -1290,7 +1295,7 @@ import { createGlobe } from './globe3d.js';
         if (!newName) return;
         myName = newName;
         localStorage.setItem('geoName', newName);
-        send({ type: 'changeName', name: newName });
+        send({ type: ClientMessage.CHANGE_NAME, name: newName });
       });
     }
     if (els.changeNameInput) {
@@ -1320,9 +1325,9 @@ import { createGlobe } from './globe3d.js';
 
     // If there's a room ID in the URL, show join screen directly
     if (urlRoomId) {
-      showScreen('join');
+      showScreen(Screen.JOIN);
     } else {
-      showScreen('landing');
+      showScreen(Screen.LANDING);
     }
 
     console.log('[Geo] init complete');

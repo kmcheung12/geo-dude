@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import { ClientMessage, ServerMessage, GameState } from '../shared/constants.js';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
@@ -239,7 +240,7 @@ function rankGuesses(results, N) {
 class Room {
   constructor(roomId) {
     this.roomId = roomId;
-    this.state = 'LOBBY';
+    this.state = GameState.LOBBY;
     this.settings = {
       mode: 'highlight',
       questionsPerRound: 10,
@@ -293,7 +294,7 @@ class Room {
     if (connected.length > 0) {
       for (const p of this.players.values()) p.isHost = false;
       connected[0].isHost = true;
-      this.broadcast({ type: 'hostAssigned', hostName: connected[0].name });
+      this.broadcast({ type: ServerMessage.HOST_ASSIGNED, hostName: connected[0].name });
       this.broadcastPlayerList();
       this.startHostPing();
     } else {
@@ -313,7 +314,7 @@ class Room {
     const existing = this.players.get(name);
     if (existing) {
       if (existing.connected && existing.ws && existing.ws.readyState === 1) {
-        this.send(ws, { type: 'error', message: `${name} is already in the room` });
+        this.send(ws, { type: ServerMessage.ERROR, message: `${name} is already in the room` });
         return null;
       }
       existing.connected = true;
@@ -322,8 +323,7 @@ class Room {
       existing.pinLocked = false;
       this.sockets.set(ws, name);
       db.savePlayer(this.roomId, existing);
-      this.sendState(ws);
-      if (this.state === 'QUESTION') {
+      if (this.state === GameState.QUESTION) {
         this.sendCurrentQuestion(ws);
       }
       this.broadcastPlayerList();
@@ -338,7 +338,7 @@ class Room {
       connected: true,
       score: 0,
       totalScore: 0,
-      spectator: this.state !== 'LOBBY',
+      spectator: this.state !== GameState.LOBBY,
       answer: null,
       answeredAt: null,
       pin: null,
@@ -348,7 +348,6 @@ class Room {
     this.players.set(name, player);
     this.sockets.set(ws, name);
     db.savePlayer(this.roomId, player);
-    this.sendState(ws);
     this.broadcastPlayerList();
     if (!this.host) this.assignHost();
     return player;
@@ -378,7 +377,7 @@ class Room {
 
     const target = this.players.get(newName);
     if (target && target.connected) {
-      this.send(ws, { type: 'error', message: `${newName} is already in the room` });
+      this.send(ws, { type: ServerMessage.ERROR, message: `${newName} is already in the room` });
       return;
     }
 
@@ -436,20 +435,20 @@ class Room {
 
     // Proximity mode uses its own flow
     if (this.settings.mode === 'proximity') {
-      if (this.state !== 'LOBBY' && this.state !== 'ROUND_END') return;
-      const fromLobby = this.state === 'LOBBY';
+      if (this.state !== GameState.LOBBY && this.state !== GameState.ROUND_END) return;
+      const fromLobby = this.state === GameState.LOBBY;
       this.startProximityRound(fromLobby);
       return;
     }
 
-    if (this.state === 'LOBBY') {
+    if (this.state === GameState.LOBBY) {
       this.currentRound = 1;
       for (const p of this.players.values()) {
         p.score = 0;
         p.totalScore = 0;
         if (p.connected) p.spectator = false;
       }
-    } else if (this.state === 'ROUND_END') {
+    } else if (this.state === GameState.ROUND_END) {
       this.currentRound++;
     }
 
@@ -468,7 +467,7 @@ class Room {
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
-    this.broadcast({ type: 'roundStart', round: this.currentRound });
+    this.broadcast({ type: ServerMessage.ROUND_START, round: this.currentRound });
     this.startQuestion();
   }
 
@@ -514,12 +513,12 @@ class Room {
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
-    this.broadcast({ type: 'roundStart', round: this.currentRound });
+    this.broadcast({ type: ServerMessage.ROUND_START, round: this.currentRound });
     this.startProximityGuess();
   }
 
   startProximityGuess() {
-    this.state = 'QUESTION';
+    this.state = GameState.QUESTION;
     for (const p of this.activePlayers) {
       p.pin = null;
       p.pinLocked = false;
@@ -530,7 +529,7 @@ class Room {
     db.savePlayers(this);
 
     this.broadcast({
-      type: 'question',
+      type: ServerMessage.QUESTION,
       index: this.currentQuestionIndex,
       totalQuestions: this.settings.guessesPerChallenge,
       round: this.currentRound,
@@ -543,19 +542,19 @@ class Room {
       this.tickTimer = setInterval(() => {
         const elapsed = (Date.now() - this.questionStartTime) / 1000;
         const remaining = Math.max(0, Math.ceil(this.settings.timerPerGuess - elapsed));
-        this.broadcast({ type: 'tick', remaining });
+        this.broadcast({ type: ServerMessage.TICK, remaining });
       }, 1000);
     }
   }
 
   handlePlacePin(ws, lat, lng) {
-    if (this.state !== 'QUESTION') return;
+    if (this.state !== GameState.QUESTION) return;
     const player = this.getPlayerByWs(ws);
     if (!player || player.spectator || player.pinLocked) return;
     if (typeof lat !== 'number' || typeof lng !== 'number') return;
 
     player.pin = { lat, lng };
-    this.broadcast({ type: 'pinUpdate', name: player.name, lat, lng });
+    this.broadcast({ type: ServerMessage.PIN_UPDATE, name: player.name, lat, lng });
 
     // Debounced save — cancel any existing timer and set a new 500ms one
     if (this.pinSaveTimers[player.name]) {
@@ -568,7 +567,7 @@ class Room {
   }
 
   handleLockPin(ws) {
-    if (this.state !== 'QUESTION') return;
+    if (this.state !== GameState.QUESTION) return;
     const player = this.getPlayerByWs(ws);
     if (!player || player.spectator || !player.pin || player.pinLocked) return;
 
@@ -581,7 +580,7 @@ class Room {
     }
     db.savePlayer(this.roomId, player);
 
-    this.broadcast({ type: 'pinLocked', name: player.name });
+    this.broadcast({ type: ServerMessage.PIN_LOCKED, name: player.name });
 
     if (this.activePlayers.every(p => p.pinLocked)) {
       this.endProximityGuess();
@@ -589,8 +588,8 @@ class Room {
   }
 
   endProximityGuess() {
-    if (this.state !== 'QUESTION') return;
-    this.state = 'QUESTION_END';
+    if (this.state !== GameState.QUESTION) return;
+    this.state = GameState.QUESTION_END;
     this.clearTimers();
 
     const target = this.challengeTarget;
@@ -643,7 +642,7 @@ class Room {
     db.saveRoom(this);
     db.savePlayers(this);
 
-    this.broadcast({ type: 'guessEnd', guesses: results, challengeOver, exactHit: isExactHit });
+    this.broadcast({ type: ServerMessage.GUESS_END, guesses: results, challengeOver, exactHit: isExactHit });
     this.broadcastPlayerList();
 
     const delay = isExactHit ? 2000 : 5000;
@@ -658,7 +657,7 @@ class Room {
   }
 
   endProximityChallenge() {
-    this.state = 'ROUND_END';
+    this.state = GameState.ROUND_END;
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
@@ -681,7 +680,7 @@ class Room {
       : this.challengeTarget.centroid;
 
     this.broadcast({
-      type: 'challengeEnd',
+      type: ServerMessage.CHALLENGE_END,
       targetName: this.challengeTarget.name,
       targetCoords,
       rankings,
@@ -735,7 +734,7 @@ class Room {
   }
 
   startQuestion() {
-    this.state = 'QUESTION';
+    this.state = GameState.QUESTION;
     for (const p of this.activePlayers) {
       p.answer = null;
       p.answeredAt = null;
@@ -746,7 +745,7 @@ class Room {
     db.savePlayers(this);
     const q = this.questions[this.currentQuestionIndex];
     const payload = {
-      type: 'question',
+      type: ServerMessage.QUESTION,
       index: this.currentQuestionIndex,
       totalQuestions: this.questions.length,
       round: this.currentRound,
@@ -765,13 +764,13 @@ class Room {
       this.tickTimer = setInterval(() => {
         const elapsed = (Date.now() - this.questionStartTime) / 1000;
         const remaining = Math.max(0, Math.ceil(this.settings.timerPerGuess - elapsed));
-        this.broadcast({ type: 'tick', remaining });
+        this.broadcast({ type: ServerMessage.TICK, remaining });
       }, 1000);
     }
   }
 
   handleAnswer(ws, answer) {
-    if (this.state !== 'QUESTION') return;
+    if (this.state !== GameState.QUESTION) return;
     const player = this.getPlayerByWs(ws);
     if (!player || player.spectator || player.answer !== null) return;
 
@@ -783,13 +782,13 @@ class Room {
     if (allAnswered) {
       this.endQuestion();
     } else {
-      this.broadcast({ type: 'playerAnswered', name: player.name });
+      this.broadcast({ type: ServerMessage.PLAYER_ANSWERED, name: player.name });
     }
   }
 
   endQuestion() {
-    if (this.state !== 'QUESTION') return;
-    this.state = 'QUESTION_END';
+    if (this.state !== GameState.QUESTION) return;
+    this.state = GameState.QUESTION_END;
     this.clearTimers();
 
     const q = this.questions[this.currentQuestionIndex];
@@ -821,7 +820,7 @@ class Room {
     db.savePlayers(this);
 
     this.broadcast({
-      type: 'questionEnd',
+      type: ServerMessage.QUESTION_END,
       correctAnswer,
       playerAnswers,
       scores: this.activePlayers.map(p => ({ name: p.name, score: p.score })),
@@ -839,7 +838,7 @@ class Room {
   }
 
   endRound() {
-    this.state = 'ROUND_END';
+    this.state = GameState.ROUND_END;
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
@@ -855,7 +854,7 @@ class Room {
     }
 
     this.broadcast({
-      type: 'roundEnd',
+      type: ServerMessage.ROUND_END,
       round: this.currentRound,
       rankings,
     });
@@ -863,14 +862,14 @@ class Room {
 
   endGameInternal() {
     this.clearTimers();
-    this.state = 'GAME_END';
+    this.state = GameState.GAME_END;
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
     const finalRankings = this.allConnected
       .map(p => ({ name: p.name, totalScore: p.totalScore }))
       .sort((a, b) => b.totalScore - a.totalScore);
-    this.broadcast({ type: 'gameEnd', finalRankings });
+    this.broadcast({ type: ServerMessage.GAME_END, finalRankings });
     // Schedule room cleanup from db after 5 minutes
     const roomId = this.roomId;
     this.gameEndCleanupTimer = setTimeout(() => {
@@ -890,7 +889,7 @@ class Room {
     if (!player || !player.isHost) return;
 
     this.clearTimers();
-    this.state = 'LOBBY';
+    this.state = GameState.LOBBY;
     this.currentRound = 0;
     this.currentQuestionIndex = 0;
     this.questions = [];
@@ -902,7 +901,7 @@ class Room {
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
-    this.broadcast({ type: 'lobbyReset' });
+    this.broadcast({ type: ServerMessage.LOBBY_RESET });
     this.broadcastPlayerList();
   }
 
@@ -964,7 +963,7 @@ class Room {
         }
       }
       this.awaitingPong = true;
-      this.send(h.ws, { type: 'ping' });
+      this.send(h.ws, { type: ServerMessage.PING });
     }, 10000);
   }
 
@@ -1009,7 +1008,7 @@ class Room {
     this.clearTimers();
     this.stopHostPing();
     for (const [ws] of this.sockets) {
-      this.send(ws, { type: 'roomClosed', reason: 'Room has ended' });
+      this.send(ws, { type: ServerMessage.ROOM_CLOSED, reason: 'Room has ended' });
       try { ws.close(); } catch {}
     }
     this.sockets.clear();
@@ -1037,11 +1036,11 @@ class Room {
       spectator: p.spectator,
       score: p.score,
     }));
-    this.broadcast({ type: 'players', players: list });
+    this.broadcast({ type: ServerMessage.PLAYERS, players: list });
   }
 
   broadcastSettings() {
-    this.broadcast({ type: 'settings', settings: this.settings });
+    this.broadcast({ type: ServerMessage.SETTINGS, settings: this.settings });
   }
 
   sendCurrentQuestion(ws) {
@@ -1052,7 +1051,7 @@ class Room {
       ? Math.max(0, Math.ceil(this.settings.timerPerGuess - elapsed))
       : null;
     this.send(ws, {
-      type: 'question',
+      type: ServerMessage.QUESTION,
       index: this.currentQuestionIndex,
       totalQuestions: this.questions.length,
       round: this.currentRound,
@@ -1133,23 +1132,23 @@ wss.on('connection', (ws) => {
     }
 
     switch (msg.type) {
-      case 'join': {
+      case ClientMessage.JOIN: {
         if (!msg.roomId) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room ID is required.' }));
+          ws.send(JSON.stringify({ type: ServerMessage.ERROR, message: 'Room ID is required.' }));
           return;
         }
         const room = rooms.get(msg.roomId);
         if (!room) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room not found.' }));
+          ws.send(JSON.stringify({ type: ServerMessage.ERROR, message: 'Room not found.' }));
           return;
         }
         const player = room.addPlayer(ws, msg.name);
         if (player) {
-          room.send(ws, { type: 'joined', name: player.name });
+          room.send(ws, { type: ServerMessage.JOINED, name: player.name });
         }
         break;
       }
-      case 'pong': {
+      case ClientMessage.PONG: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.handlePong(ws);
@@ -1158,7 +1157,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'updateSettings': {
+      case ClientMessage.UPDATE_SETTINGS: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.updateSettings(ws, msg.setting, msg.value);
@@ -1167,7 +1166,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'startRound': {
+      case ClientMessage.START_ROUND: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.startRound(ws);
@@ -1176,7 +1175,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'endGame': {
+      case ClientMessage.END_GAME: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.endGame(ws);
@@ -1185,7 +1184,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'returnToLobby': {
+      case ClientMessage.RETURN_TO_LOBBY: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.returnToLobby(ws);
@@ -1194,7 +1193,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'answer': {
+      case ClientMessage.ANSWER: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.handleAnswer(ws, msg.answer);
@@ -1203,7 +1202,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'playAgain': {
+      case ClientMessage.PLAY_AGAIN: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.returnToLobby(ws);
@@ -1212,7 +1211,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'changeName': {
+      case ClientMessage.CHANGE_NAME: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.changeName(ws, msg.name);
@@ -1221,7 +1220,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'placePin': {
+      case ClientMessage.PLACE_PIN: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.handlePlacePin(ws, msg.lat, msg.lng);
@@ -1230,7 +1229,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'lockPin': {
+      case ClientMessage.LOCK_PIN: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.handleLockPin(ws);
@@ -1239,7 +1238,7 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'skipToNext': {
+      case ClientMessage.SKIP_TO_NEXT: {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.skipToNext(ws);
@@ -1329,7 +1328,7 @@ function reloadRoomsFromDB() {
         room.players.set(pr.name, player);
       }
 
-      if (room.state === 'QUESTION' && room.settings.timerPerGuess > 0) {
+      if (room.state === GameState.QUESTION && room.settings.timerPerGuess > 0) {
         const isProximity = room.settings.mode === 'proximity';
         const remaining = room.settings.timerPerGuess * 1000 - (Date.now() - room.questionStartTime);
 
@@ -1349,7 +1348,7 @@ function reloadRoomsFromDB() {
             const elapsed = (Date.now() - room.questionStartTime) / 1000;
             const rem = Math.max(0, Math.ceil(room.settings.timerPerGuess - elapsed));
             if (rem === 0) return;
-            room.broadcast({ type: 'tick', remaining: rem });
+            room.broadcast({ type: ServerMessage.TICK, remaining: rem });
           }, 1000);
         }
       }

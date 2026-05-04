@@ -550,7 +550,6 @@ export function createGlobe(canvas) {
   };
 
   api.highlightCountry = function(name) {
-    console.trace('highlightCountry called', name);
     highlightedCountry = name;
     selectedCountry    = null;
     refreshPolygonColors();
@@ -558,7 +557,6 @@ export function createGlobe(canvas) {
   };
 
   api.clearHighlight = function() {
-    console.trace('clearHighlight called');
     highlightedCountry = null;
     selectedCountry    = null;
     refreshPolygonColors();
