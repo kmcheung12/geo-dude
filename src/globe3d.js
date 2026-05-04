@@ -199,6 +199,7 @@ export function createGlobe(canvas) {
 
   // ── State ─────────────────────────────────────────────────────────────────
   let polygonFeatures  = [];
+  let microFeatures    = [];   // point features from micro-countries.json
   let countryColors    = {};
   let highlightedCountry = null;
   let selectedCountry    = null;
@@ -293,11 +294,32 @@ export function createGlobe(canvas) {
     globe.polygonCapColor(f => capColor(f)).polygonsData([...polygonFeatures]);
   }
 
+  function refreshMicroHighlight() {
+    const micro = microFeatures.find(f => f.properties && f.properties.name === highlightedCountry);
+    if (micro) {
+      const [lng, lat] = micro.geometry.coordinates;
+      globe.ringsData([{ lat, lng }])
+        .ringColor(() => settings.country.highlightedCountryColor)
+        .ringMaxRadius(4)
+        .ringPropagationSpeed(1.5)
+        .ringRepeatPeriod(800);
+    } else {
+      globe.ringsData([]);
+    }
+  }
+
   // ── flyToCountry ──────────────────────────────────────────────────────────
   function flyToCountry(name) {
     const feat = polygonFeatures.find(f => f.properties && f.properties.name === name);
-    if (!feat) return;
-    const [lng, lat] = geoCentroid(feat);
+    let coords;
+    if (feat) {
+      coords = geoCentroid(feat);
+    } else {
+      const m = microFeatures.find(f => f.properties && f.properties.name === name);
+      if (!m) return;
+      coords = m.geometry.coordinates;
+    }
+    const [lng, lat] = coords;
     const startLat = viewLat, startLng = viewLng;
     // Take the short way around the longitude circle
     let dLng = lng - startLng;
@@ -393,7 +415,7 @@ export function createGlobe(canvas) {
 
     // Vertical drag → latitude only; horizontal drag → longitude only (2D constraint).
     // If dragging past a pole, reset the anchor so there is no dead-zone on the way back.
-    const rawLat = dragStartLat + dy * scale;
+    const rawLat = dragStartLat - dy * scale;
     const clampedLat = Math.max(-89.9, Math.min(89.9, rawLat));
     if (rawLat !== clampedLat) {
       dragStartLat = clampedLat;
@@ -417,13 +439,15 @@ export function createGlobe(canvas) {
   // ── Public API ────────────────────────────────────────────────────────────
   const api = { onCountryClick: null, onPinPlace: null };
 
-  api.load = async function(countriesUrl) {
-    const [colData, topo] = await Promise.all([
+  api.load = async function(countriesUrl, microUrl) {
+    const [colData, topo, microData] = await Promise.all([
       fetch('/api/country-colors').then(r => r.json()),
       fetch(countriesUrl).then(r => r.json()),
+      microUrl ? fetch(microUrl).then(r => r.json()) : Promise.resolve(null),
     ]);
     Object.assign(countryColors, colData);
     polygonFeatures = feature(topo, topo.objects.countries).features;
+    if (microData && microData.features) microFeatures = microData.features;
 
     globe
       .polygonsData(polygonFeatures)
@@ -553,6 +577,7 @@ export function createGlobe(canvas) {
     highlightedCountry = name;
     selectedCountry    = null;
     refreshPolygonColors();
+    refreshMicroHighlight();
     flyToCountry(name);
   };
 
@@ -560,6 +585,7 @@ export function createGlobe(canvas) {
     highlightedCountry = null;
     selectedCountry    = null;
     refreshPolygonColors();
+    refreshMicroHighlight();
   };
 
   api.setSelection = function(name) {
@@ -573,6 +599,7 @@ export function createGlobe(canvas) {
 
   api.setZoomable = function(enabled) {
     controls.enableZoom = enabled;
+    controls.enabled    = enabled;
   };
 
   api.setMyPinName = name => { myPinName = name; };
@@ -610,11 +637,9 @@ export function createGlobe(canvas) {
     flushPins();
   };
 
-  // findCountryAtPoint stub — used by app.js for proximity scoring
   api.findCountryAtPoint = (lng, lat) => {
-    // three-globe handles click detection; this is called for server-side logic
-    // Return null — server computes distances independently
-    return null;
+    const feat = polygonFeatures.find(f => geoContains(f, [lng, lat]));
+    return feat ? (feat.properties.name || null) : null;
   };
 
   api.stopLobbyDemo = function() {
@@ -658,6 +683,95 @@ export function createGlobe(canvas) {
   if (window.location.hash.includes('debug')) {
     import('lil-gui').then(({ GUI }) => {
       const gui = new GUI({ title: 'Globe Debug' });
+
+      // ── Debug ─────────────────────────────────────────────────────────────
+      const debugF = gui.addFolder('Debug');
+      let microLoopId  = null;
+      let microLoopIdx = 0;
+      const debugCtls  = { microPoints: false };
+
+      const microBtn = debugF.add(debugCtls, 'microPoints').name('Micro Points')
+        .disable()
+        .onChange(active => {
+          if (active) {
+            if (!microFeatures.length) {
+              console.warn('[Debug] No micro features loaded yet');
+              debugCtls.microPoints = false;
+              microBtn.updateDisplay();
+              return;
+            }
+            microLoopIdx = 0;
+            const showNext = () => {
+              const f = microFeatures[microLoopIdx % microFeatures.length];
+              microLoopIdx++;
+              api.highlightCountry(f.properties.name);
+            };
+            showNext();
+            microLoopId = setInterval(showNext, 3000);
+          } else {
+            clearInterval(microLoopId);
+            microLoopId = null;
+            api.clearHighlight();
+          }
+        });
+
+      const microSelectState = { country: '' };
+      const microSelectCtl = debugF.add(microSelectState, 'country', { '— select —': '' })
+        .name('Fly to Micro')
+        .disable()
+        .onChange(name => {
+          if (!name) return;
+          // stop the loop
+          if (microLoopId) {
+            clearInterval(microLoopId);
+            microLoopId = null;
+            debugCtls.microPoints = false;
+            microBtn.updateDisplay();
+          }
+          const f = microFeatures.find(f => f.properties.name === name);
+          if (!f) return;
+          api.highlightCountry(name);
+          // GeoJSON is [lng, lat]; GPS convention is [lat, lng]
+          const [lng, lat] = f.geometry.coordinates;
+          // wait for flyToCountry animation (900ms) then raycast from screen centre
+          setTimeout(() => {
+            const cx = canvas.clientWidth  / 2;
+            const cy = canvas.clientHeight / 2;
+            const hit = _screenToLatLng ? _screenToLatLng(cx, cy) : null;
+            let centreLat = null, centreLng = null, hitName = 'ocean';
+            if (hit) {
+              centreLat = hit.lat;
+              centreLng = hit.lng;
+              for (const feat of polygonFeatures) {
+                if (geoContains(feat, [hit.lng, hit.lat])) {
+                  hitName = feat.properties.name || 'ocean';
+                  break;
+                }
+              }
+            }
+            const debug = { gps: [lat, lng], centre: [centreLat, centreLng], hit: hitName };
+            navigator.clipboard.writeText(JSON.stringify(debug));
+            console.log('[Debug] micro country:', name, debug);
+          }, 950);
+        });
+
+      debugF.add({
+        'Debug Mode': () => {
+          api.stopLobbyDemo();
+          controls.autoRotate = false;
+          api.setZoomable(true);
+          api.setDraggable(true);
+          api.onPinPlace     = null;
+          api.onCountryClick = name => api.highlightCountry(name);
+          document.getElementById('screen-landing')?.classList.add('hidden');
+          // populate dropdown now that microFeatures should be loaded
+          const opts = { '— select —': '' };
+          for (const f of microFeatures) opts[f.properties.name] = f.properties.name;
+          microSelectCtl.options(opts).enable();
+          microBtn.enable();
+          console.log('[Debug] Debug mode active — click a country to highlight');
+        },
+      }, 'Debug Mode').name('Debug Mode');
 
       // ── Globe ─────────────────────────────────────────────────────────────
       const globeF = gui.addFolder('Globe');
