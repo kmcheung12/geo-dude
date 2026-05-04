@@ -314,7 +314,7 @@ class Room {
     const existing = this.players.get(name);
     if (existing) {
       if (existing.connected && existing.ws && existing.ws.readyState === 1) {
-        this.send(ws, { type: ServerMessage.ERROR, message: `${name} is already in the room` });
+        this.send(ws, this.state, { type: ServerMessage.ERROR, message: `${name} is already in the room` });
         return null;
       }
       existing.connected = true;
@@ -377,7 +377,7 @@ class Room {
 
     const target = this.players.get(newName);
     if (target && target.connected) {
-      this.send(ws, { type: ServerMessage.ERROR, message: `${newName} is already in the room` });
+      this.send(ws, this.state, { type: ServerMessage.ERROR, message: `${newName} is already in the room` });
       return;
     }
 
@@ -963,7 +963,7 @@ class Room {
         }
       }
       this.awaitingPong = true;
-      this.send(h.ws, { type: ServerMessage.PING });
+      this.send(h.ws, this.state, { type: ServerMessage.PING });
     }, 10000);
   }
 
@@ -1008,7 +1008,7 @@ class Room {
     this.clearTimers();
     this.stopHostPing();
     for (const [ws] of this.sockets) {
-      this.send(ws, { type: ServerMessage.ROOM_CLOSED, reason: 'Room has ended' });
+      this.send(ws, this.state, { type: ServerMessage.ROOM_CLOSED, reason: 'Room has ended' });
       try { ws.close(); } catch {}
     }
     this.sockets.clear();
@@ -1016,15 +1016,16 @@ class Room {
     db.deleteRoom(this.roomId);
   }
 
-  send(ws, msg) {
+  send(ws, state, msg) {
     if (ws.readyState === 1) {
+      msg.gameState = state;
       ws.send(JSON.stringify(msg));
     }
   }
 
   broadcast(msg) {
     for (const ws of this.sockets.keys()) {
-      this.send(ws, msg);
+      this.send(ws, this.state, msg);
     }
   }
 
@@ -1050,7 +1051,7 @@ class Room {
     const remaining = this.settings.timerPerGuess > 0
       ? Math.max(0, Math.ceil(this.settings.timerPerGuess - elapsed))
       : null;
-    this.send(ws, {
+    this.send(ws, this.state, {
       type: ServerMessage.QUESTION,
       index: this.currentQuestionIndex,
       totalQuestions: this.questions.length,
@@ -1144,7 +1145,7 @@ wss.on('connection', (ws) => {
         }
         const player = room.addPlayer(ws, msg.name);
         if (player) {
-          room.send(ws, { type: ServerMessage.JOINED, name: player.name });
+          room.send(ws, room.state, { type: ServerMessage.JOINED, name: player.name });
         }
         break;
       }

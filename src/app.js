@@ -253,7 +253,9 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
-        console.log('[Geo] WS msg:', msg.type, msg);
+        if (msg.type !== ServerMessage.PING) {
+            console.log('[Geo] WS msg:', msg.type, msg);
+        }
         handleMessage(msg);
       } catch (e) {
         console.error('[Geo] Invalid WS message', e, evt.data);
@@ -291,10 +293,14 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     return false;
   }
 
+  function parseState(msg) {
+    return msg.gameState;
+  }
   // ------------------------------------------------------------------
   // Message Handling
   // ------------------------------------------------------------------
   function handleMessage(msg) {
+    gameState = msg.gameState;
     switch (msg.type) {
       case ServerMessage.JOINED:
         showScreen(Screen.LOBBY);
@@ -470,6 +476,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   // Lobby
   // ------------------------------------------------------------------
   function updateLobbyVisibility() {
+    console.log('updateLobbyVisibility', isHost);
     const savedName = localStorage.getItem('geoName') || '';
     if (els.changeNameInput && !els.changeNameInput.value.trim()) {
       els.changeNameInput.value = savedName;
@@ -477,11 +484,11 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     if (isHost) {
       els.hostControls && els.hostControls.classList.remove('hidden');
       els.guestWaiting && els.guestWaiting.classList.add('hidden');
-      loadLobbyQR();
     } else {
       els.hostControls && els.hostControls.classList.add('hidden');
       els.guestWaiting && els.guestWaiting.classList.remove('hidden');
     }
+    loadLobbyQR();
   }
 
   async function loadLobbyQR() {
@@ -541,6 +548,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   // Game
   // ------------------------------------------------------------------
   function updateHostGameActions() {
+    console.log('updateHostGameActions');
     if (!els.hostGameActions) return;
     if (!isHost || gameState === GameState.LOBBY) {
       els.hostGameActions.classList.add('hidden');
@@ -1309,7 +1317,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
       const globeCanvas = document.getElementById('globe-3d');
       globe = createGlobe(globeCanvas);
 
-      globeLoadPromise = globe.load('/data/countries-110m.json').then(() => {
+      globeLoadPromise = globe.load('/data/countries-110m.json', '/data/micro-countries.json').then(() => {
         globeReady = true;
         globe.startLobbyDemo(currentMode || 'highlight');
       }).catch(e => {
