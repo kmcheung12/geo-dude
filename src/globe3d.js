@@ -184,9 +184,27 @@ export function createGlobe(canvas) {
   function setGlobeOrientation(lat, lng) {
     viewLat = Math.max(-89.9, Math.min(89.9, lat));
     viewLng = ((lng + 180) % 360 + 360) % 360 - 180;  // normalise to [-180, 180]
-    globe.quaternion.setFromEuler(
-      new THREE.Euler(viewLat * Math.PI / 180, -viewLng * Math.PI / 180, 0, 'YXZ')
+    // 1) Tilt around world X (up/down drag)
+    globe.quaternion.setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      viewLat * Math.PI / 180
     );
+    // 2) Spin around the globe's local N-S pole axis (left/right drag)
+    globe.rotateY(-viewLng * Math.PI / 180);
+  }
+
+  function getPoleScreenInfo() {
+    const northWorld = new THREE.Vector3(0, 1, 0).applyQuaternion(globe.quaternion);
+    const southWorld = new THREE.Vector3(0, -1, 0).applyQuaternion(globe.quaternion);
+    const toScreenY = (v) => {
+      const ndc = v.clone().project(camera);
+      return (1 - ndc.y) * 0.5 * canvas.clientHeight;
+    };
+    return {
+      northFacing: northWorld.z >= southWorld.z,
+      northScreenY: toScreenY(northWorld),
+      southScreenY: toScreenY(southWorld),
+    };
   }
 
   // Convert a 6-digit hex colour string to an rgba() string.
@@ -213,6 +231,9 @@ export function createGlobe(canvas) {
   let demoIntervalId     = null;
   let demoIndex          = 0;
 
+  // Sync internal state with ThreeGlobe's default orientation (Africa at centre).
+  setGlobeOrientation(0, 0);
+
   // ── Test hook ─────────────────────────────────────────────────────────────
   window.__globeState = {
     get cameraDistance()     { return camera.position.length(); },
@@ -222,7 +243,11 @@ export function createGlobe(canvas) {
     get selectedCountry()    { return selectedCountry; },
     get hoveredCountry()     { return hoveredCountry; },
     get cameraTransitioning(){ return cameraTransition !== null; },
+    get viewLat()            { return viewLat; },
+    get viewLng()            { return viewLng; },
+    get poleScreenY()        { const info = getPoleScreenInfo(); return info.northFacing ? info.northScreenY : info.southScreenY; },
     flyToCountry(name)       { flyToCountry(name); },
+    highlighCountry(name)    { api.highlightCountry(name); },
     rotateToLatLng(lat, lng) {
       globe._rotToken = Symbol();
       cameraTransition = null;
@@ -413,14 +438,15 @@ export function createGlobe(canvas) {
     const scale = (camera.fov / canvas.clientHeight) * (camera.position.length() / 100);
     globe._rotToken = Symbol();   // cancel any in-flight flyToCountry
 
-    // Vertical drag → latitude only; horizontal drag → longitude only (2D constraint).
-    // If dragging past a pole, reset the anchor so there is no dead-zone on the way back.
-    const rawLat = dragStartLat - dy * scale;
+    // Vertical drag → world-X tilt, clamped at poles
+    const rawLat = dragStartLat + dy * scale;
     const clampedLat = Math.max(-89.9, Math.min(89.9, rawLat));
     if (rawLat !== clampedLat) {
       dragStartLat = clampedLat;
       dragStartY   = clientY;
     }
+
+    // Horizontal drag → local-Y spin (globe always follows the mouse)
     setGlobeOrientation(clampedLat, dragStartLng - dx * scale);
   }
   function dragEnd() { isDragging = false; }
@@ -758,6 +784,7 @@ export function createGlobe(canvas) {
       debugF.add({
         'Debug Mode': () => {
           api.stopLobbyDemo();
+          setGlobeOrientation(viewLat, viewLng);
           controls.autoRotate = false;
           api.setZoomable(true);
           api.setDraggable(true);
