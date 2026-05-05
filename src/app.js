@@ -60,6 +60,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     guestWaiting: getEl('guest-waiting'),
     btnStart: getEl('btn-start'),
     lobbyQrCode: getEl('lobby-qr-code'),
+    guestQrCode: getEl('guest-qr-code'),
     lobbyRoomUrl: getEl('lobby-room-url'),
     settingMode: getEl('setting-mode'),
     settingQuestions: getEl('setting-questions'),
@@ -91,8 +92,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     overlayGameEnd: getEl('overlay-game-end'),
     finalRankings: getEl('final-rankings'),
     btnPlayAgain: getEl('btn-play-again'),
-    changeNameInput: getEl('change-name-input'),
-    btnChangeName: getEl('btn-change-name'),
+
     settingGuesses: getEl('setting-guesses'),
     settingChallenges: getEl('setting-challenges'),
     settingRowQuestions: getEl('setting-row-questions'),
@@ -309,9 +309,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
         localStorage.setItem('geoName', myName);
         localStorage.setItem('geoRoom', roomId);
         console.log('[Geo] Joined as:', myName);
-        if (els.changeNameInput && !els.changeNameInput.value.trim()) {
-          els.changeNameInput.value = myName;
-        }
         break;
 
       case ServerMessage.PLAYERS:
@@ -478,9 +475,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   function updateLobbyVisibility() {
     console.log('updateLobbyVisibility', isHost);
     const savedName = localStorage.getItem('geoName') || '';
-    if (els.changeNameInput && !els.changeNameInput.value.trim()) {
-      els.changeNameInput.value = savedName;
-    }
     if (isHost) {
       els.hostControls && els.hostControls.classList.remove('hidden');
       els.guestWaiting && els.guestWaiting.classList.add('hidden');
@@ -497,14 +491,54 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
       const res = await fetch(`/api/rooms/${roomId}/qr`);
       const data = await res.json();
       if (els.lobbyQrCode) els.lobbyQrCode.src = data.qr;
+      if (els.guestQrCode) els.guestQrCode.src = data.qr;
       if (els.lobbyRoomUrl) els.lobbyRoomUrl.textContent = data.url;
     } catch (e) {
       console.error('Failed to load lobby QR', e);
     }
   }
 
+  let editingName = false;
+
+  function attachNameEdit(div, badges) {
+    div.querySelector('.player-name-editable').addEventListener('click', () => {
+      editingName = true;
+      div.innerHTML = `
+        <input class="player-name-input" type="text" maxlength="20" autocomplete="off" value="${escapeHtml(myName)}">
+        <span class="player-name-badges">${badges}</span>
+        <button class="player-name-confirm">Change</button>
+      `;
+      const input = div.querySelector('.player-name-input');
+      input.focus();
+      input.select();
+      const confirm = () => {
+        const newName = input.value.trim();
+        if (!newName) return;
+        myName = newName;
+        localStorage.setItem('geoName', newName);
+        editingName = false;
+        send({ type: ClientMessage.CHANGE_NAME, name: newName });
+      };
+      div.querySelector('.player-name-confirm').addEventListener('click', confirm);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirm(); });
+      input.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (editingName && !div.contains(document.activeElement)) {
+            editingName = false;
+            div.innerHTML = `
+              <span class="player-name-editable" title="Click to change name">${escapeHtml(myName)}</span>
+              <span>${badges}</span>
+            `;
+            attachNameEdit(div, badges);
+          }
+        }, 150);
+      });
+    });
+  }
+
   function renderPlayerList(players) {
     if (!els.lobbyPlayerList) return;
+    if (editingName) return;
     els.lobbyPlayerList.innerHTML = '';
     for (const p of players) {
       const div = document.createElement('div');
@@ -512,13 +546,20 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
       let badges = '';
       if (p.isHost) badges += '<span class="host-badge">HOST</span>';
       if (p.spectator) badges += '<span class="spectator-badge">SPEC</span>';
-      div.innerHTML = `
-        <span>${escapeHtml(p.name)} ${!p.connected ? '(left)' : ''}</span>
-        <span>${badges}</span>
-      `;
+      if (p.name === myName) {
+        div.innerHTML = `
+          <span class="player-name-editable" title="Click to change name">${escapeHtml(p.name)} ${!p.connected ? '(left)' : ''}</span>
+          <span>${badges}</span>
+        `;
+        attachNameEdit(div, badges);
+      } else {
+        div.innerHTML = `
+          <span>${escapeHtml(p.name)} ${!p.connected ? '(left)' : ''}</span>
+          <span>${badges}</span>
+        `;
+      }
       els.lobbyPlayerList.appendChild(div);
     }
-
   }
 
   function updateSettingsUI(settings) {
@@ -1295,21 +1336,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     }
     if (els.btnSkipGuess) {
       els.btnSkipGuess.addEventListener('click', () => send({ type: ClientMessage.SKIP_TO_NEXT }));
-    }
-
-    if (els.btnChangeName) {
-      els.btnChangeName.addEventListener('click', () => {
-        const newName = els.changeNameInput ? els.changeNameInput.value.trim() : '';
-        if (!newName) return;
-        myName = newName;
-        localStorage.setItem('geoName', newName);
-        send({ type: ClientMessage.CHANGE_NAME, name: newName });
-      });
-    }
-    if (els.changeNameInput) {
-      els.changeNameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && els.btnChangeName) els.btnChangeName.click();
-      });
     }
 
     // Eager globe initialisation
