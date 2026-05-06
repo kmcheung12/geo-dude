@@ -13,6 +13,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   let ws = null;
   let msgQueue = [];
   let myName = localStorage.getItem('geoName') || null;
+  let hostName = localStorage.getItem('geoHost') || null;
   let roomId = null;
   let isHost = false;
   let isSpectator = false;
@@ -293,9 +294,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     return false;
   }
 
-  function parseState(msg) {
-    return msg.gameState;
-  }
   // ------------------------------------------------------------------
   // Message Handling
   // ------------------------------------------------------------------
@@ -304,8 +302,11 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     switch (msg.type) {
       case ServerMessage.JOINED:
         showScreen(Screen.LOBBY);
-        updateLobbyVisibility();
         myName = msg.name;
+        if (hostName === myName) {
+          isHost = true;
+        }
+        updateLobbyVisibility();
         localStorage.setItem('geoName', myName);
         localStorage.setItem('geoRoom', roomId);
         console.log('[Geo] Joined as:', myName);
@@ -321,7 +322,9 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
         break;
 
       case ServerMessage.HOST_ASSIGNED:
-        if (msg.hostName === myName) {
+        hostName = msg.hostName;
+        localStorage.setItem('geoHost', hostName);
+        if (hostName === myName) {
           isHost = true;
           updateLobbyVisibility();
           updateHostGameActions();

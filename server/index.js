@@ -348,8 +348,11 @@ class Room {
     this.players.set(name, player);
     this.sockets.set(ws, name);
     db.savePlayer(this.roomId, player);
-    this.broadcastPlayerList();
-    if (!this.host) this.assignHost();
+    if (!this.host) {
+        this.assignHost();
+    } else { 
+        this.broadcastPlayerList();
+    }
     return player;
   }
 

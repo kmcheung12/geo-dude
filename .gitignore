@@ -1,5 +1,6 @@
 node_modules/
 .worktrees/
+.DS_Store
 *.swp
 test-results/
 dist/
