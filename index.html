@@ -158,21 +158,18 @@
           <button id="btn-end-game" class="btn-danger">End Game</button>
         </div>
       </div>
-      <div id="player-chips" class="player-chips"></div>
     </div>
     <div id="game-prompt" class="game-prompt"></div>
-    <div class="game-sidebar">
+    <div id="game-sidebar" class="game-sidebar">
       <div id="answer-panel" class="answer-panel"></div>
         <div id="panel-spectator-watch" class="hidden" style="padding:1rem">
           <p class="text-muted">You are watching. Next round you can play!</p>
         </div>
-        <div id="panel-proximity" class="hidden" style="padding:1rem">
-          <p class="text-muted" style="font-size:0.9rem">Click the globe to place your pin. Then lock it in.</p>
-          <button id="btn-lock-pin" class="btn-primary" style="margin-top:0.5rem" disabled>Confirm</button>
+        <div id="panel-proximity" class="hidden" style="padding:1rem;display:flex;align-items:center;justify-content:center">
+          <button id="btn-lock-pin" class="btn-primary" disabled>Confirm</button>
         </div>
-        <div id="panel-select" class="hidden" style="padding:1rem">
-          <p class="text-muted" style="font-size:0.9rem">Click a country on the globe to select it.</p>
-          <button id="btn-confirm-select" class="btn-primary" style="margin-top:0.5rem" disabled>Confirm Selection</button>
+        <div id="panel-select" class="hidden" style="padding:1rem;display:flex;align-items:center;justify-content:center">
+          <button id="btn-confirm-select" class="btn-primary" disabled>Confirm Selection</button>
         </div>
     </div>
 

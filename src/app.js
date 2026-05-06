@@ -70,7 +70,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     settingPool: getEl('setting-pool'),
     gameQuestion: getEl('game-question'),
     gameTimer: getEl('game-timer'),
-    playerChips: getEl('player-chips'),
     gamePrompt: getEl('game-prompt'),
     answerPanel: getEl('answer-panel'),
     panelSpectatorWatch: getEl('panel-spectator-watch'),
@@ -314,7 +313,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
 
       case ServerMessage.PLAYERS:
         renderPlayerList(msg.players);
-        updatePlayerChips(msg.players);
         break;
 
       case ServerMessage.SETTINGS:
@@ -372,7 +370,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
 
       case ServerMessage.PLAYER_ANSWERED:
         answeredPlayers.add(msg.name);
-        updatePlayerChipsFromSet();
         break;
 
       case ServerMessage.PIN_UPDATE: {
@@ -385,7 +382,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
       case ServerMessage.PIN_LOCKED: {
         if (globe && globeReady) globe.lockPinMarker(msg.name);
         answeredPlayers.add(msg.name);
-        updatePlayerChipsFromSet();
         break;
       }
       case ServerMessage.GUESS_END:
@@ -611,7 +607,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     if (els.gamePrompt) els.gamePrompt.textContent = '';
     hasAnswered = false;
     answeredPlayers.clear();
-    updatePlayerChipsFromSet();
 
     // Render UI immediately (answer buttons, panels)
     setupQuestion(msg);
@@ -805,30 +800,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     }
   }
 
-  // ------------------------------------------------------------------
-  // Player Chips
-  // ------------------------------------------------------------------
   let lastPlayers = [];
-
-  function updatePlayerChips(players) {
-    lastPlayers = players.filter(p => p.connected && !p.spectator);
-    updatePlayerChipsFromSet();
-  }
-
-  function updatePlayerChipsFromSet() {
-    if (!els.playerChips) return;
-    els.playerChips.innerHTML = '';
-    for (const p of lastPlayers) {
-      const chip = document.createElement('div');
-      chip.className = 'player-chip' + (answeredPlayers.has(p.name) ? ' answered' : '');
-      chip.innerHTML = `
-        <span>${escapeHtml(p.name)}</span>
-        <span class="chip-score">${p.score}</span>
-        <span class="chip-check">&#10003;</span>
-      `;
-      els.playerChips.appendChild(chip);
-    }
-  }
 
   // ------------------------------------------------------------------
   // Overlays
@@ -1063,7 +1035,6 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     // 2. Sync UI state
     updateSettingsUI(msg.settings);
     renderPlayerList(msg.players);
-    updatePlayerChips(msg.players);
     updateHostGameActions();
 
     // 3. Show correct screen
