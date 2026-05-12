@@ -777,7 +777,21 @@ class Room {
     const isLastGuess = (this.currentQuestionIndex + 1) >= this.settings.guessesPerChallenge;
     const challengeOver = isExactHit || isLastGuess;
 
-    if (isExactHit) {
+    if (this.settings.mode === 'spy') {
+      // Spy mode: score = raw distance (lower = better). No rank-based points.
+      for (const r of results) {
+        const p = this.players.get(r.name);
+        if (!p) continue;
+        const dist = r.distance !== null ? r.distance : 20015;
+        p.lastSpyDistance = dist;
+        r.points = 0;  // points column unused in spy mode
+        if (p.name !== this.spyTurnOrder[this.currentSpyIndex]) {
+          // Only guessers accumulate distance score
+          p.score += dist;
+          p.totalScore += dist;
+        }
+      }
+    } else if (isExactHit) {
       // Exact-hit players: override challenge score to N
       for (const name of exactHitNames) {
         const player = this.players.get(name);
@@ -802,14 +816,6 @@ class Room {
           player.score += r.points;
           player.totalScore += r.points;
         }
-      }
-    }
-
-    // Track spy distances for endSpyChallenge scoring
-    if (this.settings.mode === 'spy') {
-      for (const r of results) {
-        const p = this.players.get(r.name);
-        if (p) p.lastSpyDistance = r.distance;
       }
     }
 
