@@ -329,6 +329,17 @@ class Room {
       if (this.state === GameState.QUESTION) {
         this.sendCurrentQuestion(ws);
       }
+      if (this.state === GameState.SPY_PICKING) {
+        const spyName = this.spyTurnOrder[this.currentSpyIndex];
+        this.send(ws, this.state, {
+          type: ServerMessage.SPY_PICKING,
+          spyName,
+          round: this.currentRound,
+          totalRounds: this.settings.challengesPerGame,
+          turnInRound: this.currentSpyIndex + 1,
+          totalTurns: this.spyTurnOrder.length,
+        });
+      }
       this.broadcastPlayerList();
       if (!this.host) this.assignHost();
       return existing;
@@ -437,7 +448,7 @@ class Room {
   startRound(ws) {
     const player = this.getPlayerByWs(ws);
     if (!player || !player.isHost) return;
-    if (this.activePlayers.length < 2) return;  // spy needs at least 2 players
+if (this.activePlayers.length < 2) return;  // spy needs at least 2 players
 
     if (this.settings.mode === 'spy') {
       if (this.state !== GameState.LOBBY && this.state !== GameState.ROUND_END) return;
