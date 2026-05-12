@@ -265,6 +265,9 @@ class Room {
     this.pingInterval = null;
     this.pingMisses = 0;
     this.challengeTarget = null;     // current target country for proximity mode
+    this.spyTurnOrder   = [];   // player names, set at game start
+    this.currentSpyIndex = 0;  // index into spyTurnOrder
+    this.spyPickingTimer = null; // auto-pick timeout
     this.awaitingPong = false;
     this.lastActivity = Date.now();
     this.createdAt = Date.now();
@@ -434,7 +437,13 @@ class Room {
   startRound(ws) {
     const player = this.getPlayerByWs(ws);
     if (!player || !player.isHost) return;
-    if (this.activePlayers.length === 0) return;
+    if (this.activePlayers.length < 2) return;  // spy needs at least 2 players
+
+    if (this.settings.mode === 'spy') {
+      if (this.state !== GameState.LOBBY && this.state !== GameState.ROUND_END) return;
+      this.startSpyGame(this.state === GameState.LOBBY);
+      return;
+    }
 
     // Proximity mode uses its own flow
     if (this.settings.mode === 'proximity') {
@@ -486,6 +495,51 @@ class Room {
       this.currentRound++;
     }
     this.startProximityChallenge();
+  }
+
+  startSpyGame(fromLobby) {
+    if (fromLobby) {
+      this.currentRound = 1;
+      for (const p of this.players.values()) {
+        p.score = 0;
+        p.totalScore = 0;
+        if (p.connected) p.spectator = false;
+      }
+      // Shuffle turn order once; same order repeats each round
+      this.spyTurnOrder = shuffle(this.activePlayers.map(p => p.name));
+    } else {
+      this.currentRound++;
+    }
+    this.currentSpyIndex = 0;
+    this.startSpyPicking();
+  }
+
+  startSpyPicking() {
+    this.state = GameState.SPY_PICKING;
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+
+    const spyName = this.spyTurnOrder[this.currentSpyIndex];
+    const turnInRound = this.currentSpyIndex + 1;
+    const totalTurns = this.spyTurnOrder.length;
+
+    this.broadcast({
+      type: ServerMessage.SPY_PICKING,
+      spyName,
+      round: this.currentRound,
+      totalRounds: this.settings.challengesPerGame,
+      turnInRound,
+      totalTurns,
+    });
+
+    // Auto-pick if spy doesn't respond within timerPerGuess seconds (min 15s)
+    const timeout = Math.max(15, this.settings.timerPerGuess) * 1000;
+    this.spyPickingTimer = setTimeout(() => {
+      this.spyPickingTimer = null;
+      if (this.state !== GameState.SPY_PICKING) return;
+      const randomCountry = GAME_COUNTRIES[Math.floor(Math.random() * GAME_COUNTRIES.length)];
+      this.beginSpyChallenge(randomCountry);
+    }, timeout);
   }
 
   startProximityChallenge() {
