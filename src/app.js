@@ -397,6 +397,14 @@ import { SpyWheelCanvas } from './spy-wheel.js';
           const colorIdx = playerColorIndex[msg.name] ?? 0;
           globe.updateOtherPin(msg.name, msg.lng, msg.lat, colorIdx);
         }
+        // Spy watching: debounced toast
+        if (currentMode === 'spy' && myName === currentSpyName && msg.name !== myName) {
+          clearTimeout(spyPinDebounceTimers[msg.name]);
+          spyPinDebounceTimers[msg.name] = setTimeout(() => {
+            delete spyPinDebounceTimers[msg.name];
+            showSpyPinToast(msg.name, msg.lng, msg.lat);
+          }, 1000);
+        }
         break;
       }
       case ServerMessage.PIN_LOCKED: {
@@ -712,6 +720,7 @@ import { SpyWheelCanvas } from './spy-wheel.js';
   }
 
   function renderProximityQuestion(msg) {
+    spyPinDebounceTimers = {};
     if (!els.answerPanel) return;
     els.answerPanel.innerHTML = '';
     hideAnswerPanels();
@@ -1103,6 +1112,20 @@ import { SpyWheelCanvas } from './spy-wheel.js';
     }, 16);
     guesserWheel._slowSpinId = slowSpinId;
     guesserWheel.start();
+  }
+
+  function showSpyPinToast(playerName, lng, lat) {
+    if (!els.spyPinToasts) return;
+    let country = 'Open Ocean';
+    if (globe && globeReady) {
+      country = globe.findCountryAtPoint(lng, lat) || 'Open Ocean';
+    }
+    const toast = document.createElement('div');
+    toast.className = 'spy-pin-toast';
+    toast.textContent = `${escapeHtml(playerName)} placed on ${escapeHtml(country)}`;
+    els.spyPinToasts.appendChild(toast);
+    // Remove after animation completes (~2s)
+    setTimeout(() => toast.remove(), 2000);
   }
 
   function showRoundEnd(msg) {
