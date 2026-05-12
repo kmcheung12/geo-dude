@@ -1,5 +1,6 @@
 import { createGlobe } from './globe3d.js';
 import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/constants.js';
+import { SpyWheelCanvas } from './spy-wheel.js';
 
 /**
  * Geo Challenge - Client App
@@ -30,6 +31,10 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   let answeredPlayers = new Set();
   let pinThrottleTimer = null;
   let playerColorIndex = {};  // name -> index for pin colors
+  let spyWheel = null;
+  let guesserWheel = null;
+  let spyPinDebounceTimers = {};   // playerName -> setTimeout id
+  let currentSpyName = null;
 
   console.log('[Geo] Script loaded. WS URL:', WS_URL);
 
@@ -112,6 +117,20 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     challengeEndGuestWaiting: getEl('challenge-end-guest-waiting'),
     btnNextChallenge: getEl('btn-next-challenge'),
     btnEndChallengeGame: getEl('btn-end-challenge-game'),
+    overlaySpyPicking:     getEl('overlay-spy-picking'),
+    spyNextBanner:         getEl('spy-next-banner'),
+    spyPickingUi:          getEl('spy-picking-ui'),
+    spyRoundLabel:         getEl('spy-round-label'),
+    spyTurnLabel:          getEl('spy-turn-label'),
+    spyWheelCanvas:        getEl('spy-wheel-canvas'),
+    spySelectedLabel:      getEl('spy-selected-label'),
+    btnSpySpin:            getEl('btn-spy-spin'),
+    btnSpyConfirm:         getEl('btn-spy-confirm'),
+    guesserWaitingUi:      getEl('guesser-waiting-ui'),
+    guesserWheelCanvas:    getEl('guesser-wheel-canvas'),
+    guesserWaitingLabel:   getEl('guesser-waiting-label'),
+    panelSpyWatching:      getEl('panel-spy-watching'),
+    spyPinToasts:          getEl('spy-pin-toasts'),
   };
 
   // ------------------------------------------------------------------
@@ -391,6 +410,10 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
         showChallengeEnd(msg);
         break;
 
+      case ServerMessage.SPY_PICKING:
+        showSpyPicking(msg);
+        break;
+
       case ServerMessage.RESTORE:
         applyRestore(msg);
         break;
@@ -577,7 +600,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   }
 
   function updateSettingsVisibility(mode) {
-    const isProximity = mode === 'proximity';
+    const isProximity = mode === 'proximity' || mode === 'spy';
     if (els.settingRowQuestions) els.settingRowQuestions.style.display = isProximity ? 'none' : '';
     if (els.settingRowListsize)  els.settingRowListsize.style.display  = isProximity ? 'none' : '';
     if (els.settingRowGuesses)   els.settingRowGuesses.style.display   = isProximity ? '' : 'none';
@@ -616,7 +639,7 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
   function setupQuestion(msg) {
     const target = msg.targetName;
 
-    if (msg.mode === 'proximity') {
+    if (msg.mode === 'proximity' || msg.mode === 'spy') {
       if (els.gamePrompt) els.gamePrompt.textContent = 'Where in the world is this country?';
       renderProximityQuestion(msg);
       return;
@@ -735,10 +758,17 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
       lockBtn.onclick = lockTrigger;
       lockBtn.ontouchstart = lockTrigger;
     }
+
+    // If spy mode and this player is the spy, show watching panel instead of pin UI
+    if (currentMode === 'spy' && myName === currentSpyName) {
+      if (els.panelProximity) els.panelProximity.classList.add('hidden');
+      if (els.panelSpyWatching) els.panelSpyWatching.classList.remove('hidden');
+      globe.onPinPlace = null;  // spy cannot place pins
+    }
   }
 
   function hideAnswerPanels() {
-    for (const p of [els.answerPanel, els.panelSpectatorWatch, els.panelProximity, els.panelSelect]) {
+    for (const p of [els.answerPanel, els.panelSpectatorWatch, els.panelProximity, els.panelSelect, els.panelSpyWatching]) {
       if (p) p.classList.add('hidden');
     }
   }
@@ -968,6 +998,110 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.remove('hidden');
   }
 
+  function showSpyPicking(msg) {
+    showScreen(Screen.GAME);
+    hideOverlays();
+    if (els.overlaySpyPicking) els.overlaySpyPicking.classList.remove('hidden');
+    currentSpyName = msg.spyName;
+
+    // Show 2s "next spy" banner if this isn't the very first pick
+    if (msg.turnInRound > 1 || msg.round > 1) {
+      showSpyBanner(msg.spyName === myName ? 'You are spy next' : `${escapeHtml(msg.spyName)} is spy next`, () => {
+        renderSpyPickingScreen(msg, msg.spyName === myName);
+      });
+    } else {
+      renderSpyPickingScreen(msg, msg.spyName === myName);
+    }
+  }
+
+  function showSpyBanner(text, onDone) {
+    if (!els.spyNextBanner) { onDone(); return; }
+    els.spyNextBanner.textContent = text;
+    els.spyNextBanner.classList.remove('hidden');
+    if (els.spyPickingUi) els.spyPickingUi.classList.add('hidden');
+    if (els.guesserWaitingUi) els.guesserWaitingUi.classList.add('hidden');
+    setTimeout(() => {
+      els.spyNextBanner.classList.add('hidden');
+      onDone();
+    }, 2000);
+  }
+
+  function renderSpyPickingScreen(msg, isSpy) {
+    if (els.spyRoundLabel) els.spyRoundLabel.textContent = `Round ${msg.round}/${msg.totalRounds}`;
+    if (els.spyTurnLabel) els.spyTurnLabel.textContent = `Turn ${msg.turnInRound}/${msg.totalTurns}`;
+
+    if (isSpy) {
+      if (els.spyPickingUi) els.spyPickingUi.classList.remove('hidden');
+      if (els.guesserWaitingUi) els.guesserWaitingUi.classList.add('hidden');
+      initSpyWheel();
+    } else {
+      if (els.spyPickingUi) els.spyPickingUi.classList.add('hidden');
+      if (els.guesserWaitingUi) els.guesserWaitingUi.classList.remove('hidden');
+      if (els.guesserWaitingLabel) {
+        els.guesserWaitingLabel.textContent = `${escapeHtml(msg.spyName)} is choosing...`;
+      }
+      initGuesserWheel();
+    }
+  }
+
+  function initSpyWheel() {
+    if (spyWheel) spyWheel.stop();
+    const canvas = els.spyWheelCanvas;
+    if (!canvas) return;
+
+    const size = window.innerWidth >= 800 ? 320 : 220;
+    canvas.width  = size;
+    canvas.height = size;
+
+    const countries = (window.__gameCountries || []).map(c => ({ name: c.name, flag: '' }));
+    if (!countries.length) return;
+
+    spyWheel = new SpyWheelCanvas(canvas, countries);
+    spyWheel.onSelect = (name) => {
+      if (els.spySelectedLabel) els.spySelectedLabel.textContent = name || '';
+      if (els.btnSpyConfirm) els.btnSpyConfirm.disabled = !name;
+      if (globe && globeReady && name) globe.highlightCountry(name);
+    };
+    spyWheel.start();
+
+    if (els.btnSpySpin) {
+      els.btnSpySpin.onclick = () => spyWheel.spin();
+    }
+    if (els.btnSpyConfirm) {
+      els.btnSpyConfirm.disabled = true;
+      els.btnSpyConfirm.onclick = () => {
+        const name = spyWheel.selectedName;
+        if (!name) return;
+        if (globe && globeReady) globe.clearHighlight();
+        send({ type: ClientMessage.PICK_COUNTRY, name });
+        spyWheel.stop();
+      };
+    }
+  }
+
+  function initGuesserWheel() {
+    if (guesserWheel) guesserWheel.stop();
+    const canvas = els.guesserWheelCanvas;
+    if (!canvas) return;
+
+    const size = window.innerWidth >= 800 ? 280 : 200;
+    canvas.width  = size;
+    canvas.height = size;
+
+    // Blurred decorative version: use same countries but no labels
+    const countries = (window.__gameCountries || []).map(() => ({ name: '', flag: '' }));
+    if (!countries.length) return;
+
+    guesserWheel = new SpyWheelCanvas(canvas, countries);
+    const slowSpinId = setInterval(() => {
+      if (!guesserWheel) return;
+      guesserWheel.rotation += 0.005;
+      guesserWheel._normalise();
+    }, 16);
+    guesserWheel._slowSpinId = slowSpinId;
+    guesserWheel.start();
+  }
+
   function showRoundEnd(msg) {
     if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.add('hidden');
     if (els.roundRankings) {
@@ -1150,14 +1284,25 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     }
   }
 
+  function stopGuesserWheel() {
+    if (guesserWheel) {
+      if (guesserWheel._slowSpinId) clearInterval(guesserWheel._slowSpinId);
+      guesserWheel.stop();
+      guesserWheel = null;
+    }
+  }
+
   function hideOverlays() {
-    if (els.overlayQuestionEnd) els.overlayQuestionEnd.classList.add('hidden');
-    if (els.overlayRoundEnd) els.overlayRoundEnd.classList.add('hidden');
-    if (els.overlayGameEnd) els.overlayGameEnd.classList.add('hidden');
-    if (els.overlayGuessEnd)    els.overlayGuessEnd.classList.add('hidden');
-    if (els.overlayChallengeEnd) els.overlayChallengeEnd.classList.add('hidden');
+    for (const o of [
+      els.overlayQuestionEnd, els.overlayRoundEnd, els.overlayGameEnd,
+      els.overlayGuessEnd, els.overlayChallengeEnd, els.overlaySpyPicking,
+    ]) {
+      if (o) o.classList.add('hidden');
+    }
     if (els.geCountdown) els.geCountdown.style.display = '';
     stopQeCountdown();
+    stopGuesserWheel();
+    if (spyWheel) { spyWheel.stop(); spyWheel = null; }
   }
 
   // ------------------------------------------------------------------
@@ -1330,6 +1475,11 @@ import { ClientMessage, ServerMessage, GameState, Screen } from '../shared/const
     }
 
     connect();
+
+    fetch('/api/countries')
+      .then(r => r.json())
+      .then(list => { window.__gameCountries = list; })
+      .catch(() => {});
 
     // If there's a room ID in the URL, show join screen directly
     if (urlRoomId) {
