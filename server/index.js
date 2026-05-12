@@ -542,6 +542,112 @@ class Room {
     }, timeout);
   }
 
+  handlePickCountry(ws, name) {
+    if (this.state !== GameState.SPY_PICKING) return;
+    const player = this.getPlayerByWs(ws);
+    const spyName = this.spyTurnOrder[this.currentSpyIndex];
+    if (!player || player.name !== spyName) return;
+
+    const country = GAME_COUNTRIES.find(c => c.name === name);
+    if (!country) {
+      this.send(ws, this.state, { type: ServerMessage.ERROR, message: 'Unknown country.' });
+      return;
+    }
+
+    if (this.spyPickingTimer) {
+      clearTimeout(this.spyPickingTimer);
+      this.spyPickingTimer = null;
+    }
+
+    this.beginSpyChallenge(country);
+  }
+
+  beginSpyChallenge(country) {
+    this.challengeTarget = country;
+    this.currentQuestionIndex = 0;
+    for (const p of this.activePlayers) {
+      p.score = 0;
+      p.pin = null;
+      p.pinLocked = false;
+    }
+    this.lastActivity = Date.now();
+    db.saveRoom(this);
+    db.savePlayers(this);
+    this.broadcast({ type: ServerMessage.ROUND_START, round: this.currentRound });
+    this.startProximityGuess();   // reuse proximity guess flow
+  }
+
+  endSpyChallenge() {
+    this.state = GameState.ROUND_END;
+    this.lastActivity = Date.now();
+
+    const spyName = this.spyTurnOrder[this.currentSpyIndex];
+    const spyPlayer = this.players.get(spyName);
+    const guessers = this.activePlayers.filter(p => p.name !== spyName);
+
+    // Spy score = minimum distance among guessers (best guesser's distance).
+    // Guesser distances are stored in p.lastSpyDistance during endProximityGuess (Task 8b).
+    const distances = guessers
+      .map(p => p.lastSpyDistance)
+      .filter(d => d !== undefined && d !== null);
+    const spyDistance = distances.length > 0 ? Math.min(...distances) : 20015;
+
+    if (spyPlayer) {
+      spyPlayer.totalScore += spyDistance;
+    }
+
+    // Promote spectators
+    for (const p of this.players.values()) {
+      if (p.connected && p.spectator) {
+        p.spectator = false;
+        p.score = 0;
+      }
+    }
+
+    db.saveRoom(this);
+    db.savePlayers(this);
+
+    const targetCoords = this.challengeTarget.isMicro
+      ? this.challengeTarget.coordinates
+      : this.challengeTarget.centroid;
+
+    // Determine next spy for banner
+    const nextSpyIndex = this.currentSpyIndex + 1;
+    const isLastTurnInRound = nextSpyIndex >= this.spyTurnOrder.length;
+    const isLastRound = isLastTurnInRound && this.currentRound >= this.settings.challengesPerGame;
+    const nextSpyName = isLastTurnInRound ? null : this.spyTurnOrder[nextSpyIndex];
+
+    const rankings = this.activePlayers
+      .map(p => ({ name: p.name, score: p.score, totalScore: p.totalScore }))
+      .sort((a, b) => a.totalScore - b.totalScore);  // ascending: lower distance = better
+
+    this.broadcast({
+      type: ServerMessage.CHALLENGE_END,
+      targetName: this.challengeTarget.name,
+      targetCoords,
+      rankings,
+      isLastChallenge: isLastRound,
+      nextSpyName,
+      isLastTurnInRound,
+    });
+
+    if (isLastRound) {
+      setTimeout(() => this.endGameInternal(), 0);
+      return;
+    }
+
+    // Auto-advance after 2s banner
+    setTimeout(() => {
+      if (isLastTurnInRound) {
+        this.currentRound++;
+        this.currentSpyIndex = 0;
+      } else {
+        this.currentSpyIndex++;
+      }
+      this.startSpyPicking();
+    }, 2000);
+  }
+
   startProximityChallenge() {
     this.currentQuestionIndex = 0;
 
@@ -695,6 +801,14 @@ class Room {
       }
     }
 
+    // Track spy distances for endSpyChallenge scoring
+    if (this.settings.mode === 'spy') {
+      for (const r of results) {
+        const p = this.players.get(r.name);
+        if (p) p.lastSpyDistance = r.distance;
+      }
+    }
+
     this.lastActivity = Date.now();
     db.saveRoom(this);
     db.savePlayers(this);
@@ -705,7 +819,11 @@ class Room {
     const delay = isExactHit ? 2000 : 5000;
     this.scheduleNextQuestion(delay, () => {
       if (challengeOver) {
-        this.endProximityChallenge();
+        if (this.settings.mode === 'spy') {
+          this.endSpyChallenge();
+        } else {
+          this.endProximityChallenge();
+        }
       } else {
         this.currentQuestionIndex++;
         this.startProximityGuess();
@@ -1304,6 +1422,15 @@ wss.on('connection', (ws) => {
         for (const room of rooms.values()) {
           if (room.sockets.has(ws)) {
             room.skipToNext(ws);
+            break;
+          }
+        }
+        break;
+      }
+      case ClientMessage.PICK_COUNTRY: {
+        for (const room of rooms.values()) {
+          if (room.sockets.has(ws)) {
+            room.handlePickCountry(ws, msg.name);
             break;
           }
         }
