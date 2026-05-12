@@ -720,6 +720,7 @@ import { SpyWheelCanvas } from './spy-wheel.js';
   }
 
   function renderProximityQuestion(msg) {
+    for (const id of Object.values(spyPinDebounceTimers)) clearTimeout(id);
     spyPinDebounceTimers = {};
     if (!els.answerPanel) return;
     els.answerPanel.innerHTML = '';
