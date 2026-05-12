@@ -16,6 +16,7 @@ export const ClientMessage = Object.freeze({
   PLACE_PIN:       'placePin',
   LOCK_PIN:        'lockPin',
   SKIP_TO_NEXT:    'skipToNext',
+  PICK_COUNTRY:    'pickCountry',
 });
 
 /** Messages sent from server to client (app.js). */
@@ -40,6 +41,7 @@ export const ServerMessage = Object.freeze({
   LOBBY_RESET:     'lobbyReset',
   ROOM_CLOSED:     'roomClosed',
   RESTORE:         'restore',
+  SPY_PICKING:     'spyPicking',
 });
 
 /** UI screen names used in showScreen(). */
@@ -53,6 +55,7 @@ export const Screen = Object.freeze({
 /** Server-side game state values. */
 export const GameState = Object.freeze({
   LOBBY:        'LOBBY',
+  SPY_PICKING:  'SPY_PICKING',
   QUESTION:     'QUESTION',
   QUESTION_END: 'QUESTION_END',
   ROUND_END:    'ROUND_END',
