@@ -35,6 +35,7 @@ import { SpyWheelCanvas } from './spy-wheel.js';
   let guesserWheel = null;
   let spyPinDebounceTimers = {};   // playerName -> setTimeout id
   let currentSpyName = null;
+  let spyBannerTimer = null;
 
   console.log('[Geo] Script loaded. WS URL:', WS_URL);
 
@@ -1016,11 +1017,13 @@ import { SpyWheelCanvas } from './spy-wheel.js';
 
   function showSpyBanner(text, onDone) {
     if (!els.spyNextBanner) { onDone(); return; }
+    if (spyBannerTimer) { clearTimeout(spyBannerTimer); spyBannerTimer = null; }
     els.spyNextBanner.textContent = text;
     els.spyNextBanner.classList.remove('hidden');
     if (els.spyPickingUi) els.spyPickingUi.classList.add('hidden');
     if (els.guesserWaitingUi) els.guesserWaitingUi.classList.add('hidden');
-    setTimeout(() => {
+    spyBannerTimer = setTimeout(() => {
+      spyBannerTimer = null;
       els.spyNextBanner.classList.add('hidden');
       onDone();
     }, 2000);
@@ -1080,7 +1083,7 @@ import { SpyWheelCanvas } from './spy-wheel.js';
   }
 
   function initGuesserWheel() {
-    if (guesserWheel) guesserWheel.stop();
+    if (guesserWheel) stopGuesserWheel();
     const canvas = els.guesserWheelCanvas;
     if (!canvas) return;
 
@@ -1303,6 +1306,7 @@ import { SpyWheelCanvas } from './spy-wheel.js';
     stopQeCountdown();
     stopGuesserWheel();
     if (spyWheel) { spyWheel.stop(); spyWheel = null; }
+    if (globe && globeReady) globe.clearHighlight();
   }
 
   // ------------------------------------------------------------------
@@ -1479,7 +1483,7 @@ import { SpyWheelCanvas } from './spy-wheel.js';
     fetch('/api/countries')
       .then(r => r.json())
       .then(list => { window.__gameCountries = list; })
-      .catch(() => {});
+      .catch(() => { console.warn('[spy] Failed to load country list — spy wheel will be empty'); });
 
     // If there's a room ID in the URL, show join screen directly
     if (urlRoomId) {
