@@ -18,6 +18,7 @@ export class SpyWheelCanvas {
     this.velocity = 0;                   // rad/frame during spin animation
     this.spinning = false;
     this.rafId = null;
+    this._renderRafId = null;
     this.onSelect = null;                // callback(name)
     this._selectedIndex = 0;
     this._dragStartAngle = null;
@@ -36,6 +37,8 @@ export class SpyWheelCanvas {
   stop() {
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = null;
+    if (this._renderRafId) cancelAnimationFrame(this._renderRafId);
+    this._renderRafId = null;
   }
 
   spin() {
@@ -162,7 +165,7 @@ export class SpyWheelCanvas {
     ctx.fillStyle = '#63b3ed';
     ctx.fill();
 
-    this.rafId = requestAnimationFrame(() => this._render());
+    this._renderRafId = requestAnimationFrame(() => this._render());
   }
 
   _angleFromEvent(e) {
