@@ -55,12 +55,13 @@
       <div class="panel-game-control">
         <div id="host-controls" class="host-controls hidden">
           <div class="settings-grid">
-  <div class="setting-row">
+  <div class="setting-row" id="setting-row-mode">
     <label>Mode</label>
     <select id="setting-mode">
       <option value="highlight">Name the country</option>
       <option value="select">Find a country</option>
       <option value="proximity">Guess the country</option>
+      <option value="spy">I Spy</option>
     </select>
   </div>
 </div>
@@ -171,6 +172,11 @@
         <div id="panel-select" class="hidden" style="padding:1rem;display:flex;align-items:center;justify-content:center">
           <button id="btn-confirm-select" class="btn-primary" disabled>Confirm Selection</button>
         </div>
+        <!-- Spy Watching Panel (during guessing phase) -->
+        <div id="panel-spy-watching" class="panel hidden">
+          <p class="spy-watching-label">Watch where they guess...</p>
+          <div id="spy-pin-toasts" class="spy-pin-toasts"></div>
+        </div>
     </div>
 
     <!-- Question End Overlay -->
@@ -225,6 +231,28 @@
         <div id="challenge-end-guest-waiting" class="guest-waiting">
           <p>Awaiting host...</p>
         </div>
+      </div>
+    </div>
+
+    <!-- Spy Picking Overlay -->
+    <div id="overlay-spy-picking" class="overlay hidden">
+      <div id="spy-next-banner" class="spy-banner hidden"></div>
+      <div id="spy-picking-ui" class="spy-picking-card hidden">
+        <div class="spy-picking-header">
+          <span id="spy-round-label"></span>
+          <span id="spy-turn-label"></span>
+        </div>
+        <p class="spy-prompt">You are the Spy — pick a country</p>
+        <canvas id="spy-wheel-canvas"></canvas>
+        <div id="spy-selected-label" class="spy-selected-label"></div>
+        <div class="spy-actions">
+          <button id="btn-spy-spin" class="btn-secondary">Spin</button>
+          <button id="btn-spy-confirm" class="btn-primary" disabled>Confirm</button>
+        </div>
+      </div>
+      <div id="guesser-waiting-ui" class="guesser-waiting-card hidden">
+        <canvas id="guesser-wheel-canvas"></canvas>
+        <p id="guesser-waiting-label" class="spy-prompt"></p>
       </div>
     </div>
 
