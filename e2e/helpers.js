@@ -146,12 +146,25 @@ async function zoomGlobe(page, deltaY = -300) {
   return { before, after };
 }
 
+/**
+ * From the lobby as host, select "spy" mode, click Start Round,
+ * and wait until the spy-picking overlay appears.
+ */
+async function startSpyGame(page) {
+  await expect(page.locator('#btn-start')).toBeVisible({ timeout: TIMEOUT });
+  await page.locator('#setting-mode').selectOption('spy');
+  await page.locator('#btn-start').click();
+  // Spy picking overlay should appear
+  await expect(page.locator('#overlay-spy-picking')).toBeVisible({ timeout: TIMEOUT });
+}
+
 export {
   startRoom,
   joinRoom,
   startHighlightGame,
   startSelectGame,
   startProximityGame,
+  startSpyGame,
   clickGlobeCenter,
   clickCountryOnGlobe,
   dragGlobe,
