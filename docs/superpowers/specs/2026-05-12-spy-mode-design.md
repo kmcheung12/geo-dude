@@ -153,13 +153,30 @@ The transition is **automatic** — after the 2s banner the server broadcasts `s
 
 ---
 
+## Spy View During Guessing Phase
+
+While guessers are placing pins, the spy watches the globe. The spy receives the same `pinUpdate` broadcasts as everyone else (no server changes needed). On the spy's client:
+
+- Incoming `pinUpdate` messages are queued per player.
+- A 1-second debounce runs per player: only the **latest** pin within each 1s window is processed; intermediate updates are dropped.
+- When a debounced pin fires, the spy's globe briefly highlights the pin location and shows a toast: *"Player X placed on [Country]"*. Country name is resolved client-side via `d3.geoContains` (same logic as the existing guess-end overlay); falls back to *"Open Ocean"* if no match.
+- The highlight and toast fade after ~2s.
+- Multiple players' toasts can be visible simultaneously (stacked).
+- The spy cannot interact with the globe during this phase (no pin placement for the spy).
+
+This gives the spy live visual feedback on where guessers are searching, making the waiting phase engaging without revealing whether guesses are close.
+
+---
+
 ## Client UI Components
 
 | Component | Description |
 |---|---|
 | `SpyWheelCanvas` | Canvas wheel renderer. Takes rotation angle, country list, visible arc size. Stateless — re-renders on each animation frame. |
 | `spy-picking` panel | Spy-only screen: wheel + Spin + Confirm buttons + globe. |
+| `spy-watching` panel | Spy screen during guessing phase: globe (read-only) with live pin toasts. |
 | `guesser-waiting` panel | Guesser screen during spy picking: blurred decorative wheel + status label. |
+| Pin toast | *"Player X placed on [Country]"* — debounced, fades after 2s, stackable. |
 | Transition banner | 2s overlay shown after challengeEnd naming the next spy. |
 
 ---
