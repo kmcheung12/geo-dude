@@ -696,7 +696,7 @@ class Room {
       index: this.currentQuestionIndex,
       totalQuestions: this.settings.guessesPerChallenge,
       round: this.currentRound,
-      mode: 'proximity',
+      mode: this.settings.mode,
       timeLimit: this.settings.timerPerGuess,
     });
 
