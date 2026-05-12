@@ -976,6 +976,10 @@ class Room {
       this.nextQuestionTimer = null;
       this.pendingNextFn = null;
     }
+    if (this.spyPickingTimer) {
+      clearTimeout(this.spyPickingTimer);
+      this.spyPickingTimer = null;
+    }
   }
 
   scheduleNextQuestion(delay, fn) {
