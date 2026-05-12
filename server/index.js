@@ -714,6 +714,8 @@ class Room {
     if (this.state !== GameState.QUESTION) return;
     const player = this.getPlayerByWs(ws);
     if (!player || player.spectator || player.pinLocked) return;
+    if (this.settings.mode === 'spy' && this.state === GameState.QUESTION &&
+        this.spyTurnOrder[this.currentSpyIndex] === player.name) return;
     if (typeof lat !== 'number' || typeof lng !== 'number') return;
 
     player.pin = { lat, lng };
@@ -733,6 +735,8 @@ class Room {
     if (this.state !== GameState.QUESTION) return;
     const player = this.getPlayerByWs(ws);
     if (!player || player.spectator || !player.pin || player.pinLocked) return;
+    if (this.settings.mode === 'spy' && this.state === GameState.QUESTION &&
+        this.spyTurnOrder[this.currentSpyIndex] === player.name) return;
 
     player.pinLocked = true;
 
