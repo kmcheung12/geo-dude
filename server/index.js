@@ -1053,7 +1053,10 @@ class Room {
     db.savePlayers(this);
     const finalRankings = this.allConnected
       .map(p => ({ name: p.name, totalScore: p.totalScore }))
-      .sort((a, b) => b.totalScore - a.totalScore);
+      .sort((a, b) => this.settings.mode === 'spy'
+        ? a.totalScore - b.totalScore   // ascending: lower distance wins
+        : b.totalScore - a.totalScore   // descending: higher points wins
+      );
     this.broadcast({ type: ServerMessage.GAME_END, finalRankings });
     // Schedule room cleanup from db after 5 minutes
     const roomId = this.roomId;
