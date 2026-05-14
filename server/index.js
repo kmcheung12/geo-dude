@@ -18,7 +18,8 @@ import { geoContains, geoCentroid } from 'd3-geo';
 import { openDatabase } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = openDatabase(path.join(__dirname, '..', 'data', 'geo-challenge.db'));
+const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'geo-challenge.db');
+const db = openDatabase(dbPath);
 
 // ------------------------------------------------------------------
 // Config & Network Detection
@@ -154,12 +155,60 @@ if (conflicts === 0) {
 }
 
 // ------------------------------------------------------------------
+// Flag emoji lookup (ISO alpha-2 → flag emoji)
+// ------------------------------------------------------------------
+const _countriesListData = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'node_modules', 'countries-list', 'countries.min.json'), 'utf8')
+);
+// name → alpha-2 code from countries-list
+const _nameToAlpha2 = {};
+for (const [code, c] of Object.entries(_countriesListData)) _nameToAlpha2[c.name] = code;
+// Manual overrides for names that differ between the TopoJSON and countries-list
+Object.assign(_nameToAlpha2, {
+  'United States of America': 'US',
+  'Dem. Rep. Congo':          'CD',
+  'Dominican Rep.':           'DO',
+  'Falkland Is.':             'FK',
+  'Timor-Leste':              'TL',
+  "Côte d'Ivoire":            'CI',
+  'Central African Rep.':     'CF',
+  'Congo':                    'CG',
+  'Eq. Guinea':               'GQ',
+  'Myanmar':                  'MM',
+  'Turkey':                   'TR',
+  'Solomon Is.':              'SB',
+  'Czechia':                  'CZ',
+  'Bosnia and Herz.':         'BA',
+  'Macedonia':                'MK',
+  'S. Sudan':                 'SS',
+  'W. Sahara':                'EH',
+  'N. Cyprus':                'CY',   // closest ISO code
+  'Somaliland':               'SO',   // no ISO code — use Somalia
+  'Vatican':                  'VA',
+  'Cabo Verde':               'CV',
+  'Micronesia, Fed. Sts.':    'FM',
+});
+
+/** Convert ISO 3166-1 alpha-2 code to flag emoji. */
+function alpha2ToFlag(code) {
+  if (!code || code.length !== 2) return '';
+  return [...code.toUpperCase()]
+    .map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65))
+    .join('');
+}
+
+function countryFlag(name) {
+  return alpha2ToFlag(_nameToAlpha2[name] || '');
+}
+
+// ------------------------------------------------------------------
 // Build GAME_COUNTRIES list (polygons + micro point-markers)
 // ------------------------------------------------------------------
 const GAME_COUNTRIES = countryFeatures
   .map(f => ({
     id: f.id,
     name: f.properties.name,
+    flag: countryFlag(f.properties.name),
     continent: countryContinents[f.properties.name] || null,
     color: countryColorMap[f.properties.name] || null,
     centroid: geoCentroid(f), // [lng, lat]
@@ -173,6 +222,7 @@ for (const f of microCountries.features) {
     GAME_COUNTRIES.push({
       id: 'micro-' + name.replace(/[^a-zA-Z0-9]/g, '-'),
       name,
+      flag: countryFlag(name),
       continent,
       isMicro: true,
       coordinates: f.geometry.coordinates,
@@ -384,6 +434,39 @@ class Room {
     }
     this.sockets.delete(ws);
     this.broadcastPlayerList();
+    this._checkGameStateAfterDisconnect();
+  }
+
+  // Handles all game-state side-effects that may be needed after a player disconnects.
+  _checkGameStateAfterDisconnect() {
+    // Issues #1 & #5: Spy disconnected during SPY_PICKING — cancel the slow auto-pick
+    // timer and pick immediately so waiting guessers aren't stuck for up to max(15, timer)s.
+    if (this.state === GameState.SPY_PICKING) {
+      const spyName = this.spyTurnOrder[this.currentSpyIndex];
+      const spyPlayer = this.players.get(spyName);
+      if (!spyPlayer || !spyPlayer.connected) {
+        if (this.spyPickingTimer) {
+          clearTimeout(this.spyPickingTimer);
+          this.spyPickingTimer = null;
+        }
+        const randomCountry = GAME_COUNTRIES[Math.floor(Math.random() * GAME_COUNTRIES.length)];
+        this.beginSpyChallenge(randomCountry);
+        // Fall through — if everyone just left, the allConnected check below will clear timers.
+      }
+    }
+
+    // Issues #3 & #4: A guesser disconnected during QUESTION in spy mode with no timer.
+    // Advance if all remaining active guessers have already locked (vacuously true when
+    // none remain), otherwise the game would deadlock with no path to endProximityGuess.
+    if (this.state === GameState.QUESTION && this.settings.mode === 'spy' && !this.questionTimer) {
+      const spyName = this.spyTurnOrder[this.currentSpyIndex];
+      const guessers = this.activePlayers.filter(p => p.name !== spyName);
+      if (guessers.every(p => p.pinLocked)) {
+        this.endProximityGuess();
+        // Fall through — allConnected check below handles the fully-empty room case.
+      }
+    }
+
   }
 
   changeName(ws, newName) {
@@ -542,6 +625,15 @@ class Room {
       turnInRound,
       totalTurns,
     });
+
+    // Issues #1 & #5: if the designated spy is already disconnected, auto-pick immediately
+    // instead of making everyone wait up to max(15, timerPerGuess) seconds.
+    const spyPlayer = this.players.get(spyName);
+    if (!spyPlayer || !spyPlayer.connected) {
+      const randomCountry = GAME_COUNTRIES[Math.floor(Math.random() * GAME_COUNTRIES.length)];
+      this.beginSpyChallenge(randomCountry);
+      return;
+    }
 
     // Auto-pick if spy doesn't respond within timerPerGuess seconds (min 15s)
     const timeout = Math.max(15, this.settings.timerPerGuess) * 1000;
@@ -762,6 +854,14 @@ class Room {
 
     if (this.activePlayers.every(p => p.pinLocked)) {
       this.endProximityGuess();
+    } else if (this.settings.mode === 'spy' && !this.questionTimer) {
+      // Issues #2–4: no timer running — advance when all guessers (non-spy actives) have locked.
+      // [].every() is vacuously true, so this also fires when all guessers have disconnected.
+      const spyName = this.spyTurnOrder[this.currentSpyIndex];
+      const guessers = this.activePlayers.filter(p => p.name !== spyName);
+      if (guessers.every(p => p.pinLocked)) {
+        this.endProximityGuess();
+      }
     }
   }
 

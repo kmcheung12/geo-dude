@@ -1062,11 +1062,13 @@ import { SpyWheelCanvas } from './spy-wheel.js';
     const canvas = els.spyWheelCanvas;
     if (!canvas) return;
 
-    const size = window.innerWidth >= 800 ? 320 : 220;
-    canvas.width  = size;
-    canvas.height = size;
+    // Half-wheel canvas: wide and roughly half as tall
+    const W = Math.min(window.innerWidth - 20, 560);
+    const H = Math.round(W * 0.46) + 16;
+    canvas.width  = W;
+    canvas.height = H;
 
-    const countries = (window.__gameCountries || []).map(c => ({ name: c.name, flag: '' }));
+    const countries = (window.__gameCountries || []).map(c => ({ name: c.name, flag: c.flag || '' }));
     if (!countries.length) return;
 
     spyWheel = new SpyWheelCanvas(canvas, countries);
@@ -1097,11 +1099,13 @@ import { SpyWheelCanvas } from './spy-wheel.js';
     const canvas = els.guesserWheelCanvas;
     if (!canvas) return;
 
-    const size = window.innerWidth >= 800 ? 280 : 200;
-    canvas.width  = size;
-    canvas.height = size;
+    // Same half-wheel shape for the decorative guesser view
+    const W = Math.min(window.innerWidth - 20, 400);
+    const H = Math.round(W * 0.46) + 16;
+    canvas.width  = W;
+    canvas.height = H;
 
-    // Blurred decorative version: use same countries but no labels
+    // Decorative version: use same countries but no labels
     const countries = (window.__gameCountries || []).map(() => ({ name: '', flag: '' }));
     if (!countries.length) return;
 
@@ -1109,7 +1113,6 @@ import { SpyWheelCanvas } from './spy-wheel.js';
     const slowSpinId = setInterval(() => {
       if (!guesserWheel) return;
       guesserWheel.rotation += 0.005;
-      guesserWheel._normalise();
     }, 16);
     guesserWheel._slowSpinId = slowSpinId;
     guesserWheel.start();
