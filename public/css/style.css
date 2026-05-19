@@ -327,10 +327,19 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.35rem 0.6rem;
   background: var(--bg-card);
   border-radius: 6px;
   font-size: 0.9rem;
+}
+
+.player-item > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-name-editable {
@@ -685,7 +694,7 @@ button:disabled {
   position: fixed;
   /* Position below the header + chips bar, centred on the visible globe
      (full-width minus the right sidebar) */
-  top: calc(var(--header-h) + var(--topbar-h) + 12px);
+  top: calc(var(--header-h) + 12px);
   left: calc(50% - var(--sidebar-w) / 2);
   transform: translateX(-50%);
   z-index: 21;
@@ -706,7 +715,7 @@ button:disabled {
 
 .game-sidebar {
   position: fixed;
-  top: calc(var(--header-h) + var(--topbar-h)); right: 0; bottom: 0;
+  top: var(--header-h); right: 0; bottom: 0;
   width: var(--sidebar-w);
   background: rgba(7, 19, 34, 0.82);
   backdrop-filter: blur(14px);
