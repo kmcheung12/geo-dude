@@ -284,8 +284,8 @@ button:disabled {
 
 /* Lobby */
 #screen-lobby {
-  align-items: flex-start;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
   padding: 1.5rem;
 }
 
