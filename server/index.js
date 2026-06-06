@@ -16,6 +16,7 @@ import * as topojson from 'topojson-client';
 // geoContains used in endProximityGuess (Task 6); geoCentroid used here for centroid precomputation
 import { geoContains, geoCentroid } from 'd3-geo';
 import { openDatabase } from './db.js';
+import { countries as _countriesListData } from 'countries-list';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'geo-challenge.db');
@@ -157,9 +158,6 @@ if (conflicts === 0) {
 // ------------------------------------------------------------------
 // Flag emoji lookup (ISO alpha-2 → flag emoji)
 // ------------------------------------------------------------------
-const _countriesListData = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '..', 'node_modules', 'countries-list', 'countries.min.json'), 'utf8')
-);
 // name → alpha-2 code from countries-list
 const _nameToAlpha2 = {};
 for (const [code, c] of Object.entries(_countriesListData)) _nameToAlpha2[c.name] = code;
